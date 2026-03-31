@@ -1,0 +1,41 @@
+apis:
+  qwen:
+    name: qwen
+    api_type: qwen
+    base_url: https://dashscope.aliyuncs.com/api/v1
+    api_key: "your_qwen_api_key"
+    auth_method: "bearer"
+    timeout: 60
+    stream_timeout: 120
+    connect_timeout: 10
+    retry_count: 3
+    default_model: "qwen-plus"
+    models:
+      - name: qwen-plus
+        max_tokens: 8192
+        context_length: 32768
+      - name: qwen-turbo
+        max_tokens: 4096
+        context_length: 16384
+
+  deepseek:
+    name: deepseek
+    api_type: openai
+    base_url: https://api.deepseek.com/v1
+    api_key: "your_deepseek_api_key"
+    auth_method: "bearer"
+    timeout: 30
+    retry_count: 3
+    default_model: "deepseek-chat"
+    models:
+      - name: deepseek-chat
+        max_tokens: 1024
+        context_length: 8192
+      - name: deepseek-llm
+        max_tokens: 2048
+        context_length: 32768
+
+global:
+  timeout: 30
+  rate_limit: 100
+  default_api: "deepseek"

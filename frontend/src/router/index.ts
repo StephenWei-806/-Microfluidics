@@ -1,0 +1,26 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
+
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    redirect: '/chat'
+  },
+  {
+    path: '/chat',
+    name: 'Chat',
+    component: () => import('@/views/ChatRoom.vue')
+  },
+  {
+    path: '/config',
+    name: 'Config',
+    component: () => import('@/views/ApiConfig.vue')
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes
+})
+
+export default router

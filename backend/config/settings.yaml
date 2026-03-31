@@ -1,0 +1,26 @@
+# 系统设置
+server:
+  host: 0.0.0.0
+  port: 5000
+  debug: true
+
+# 配置管理
+config:
+  cache_enabled: true
+  cache_ttl: 3600
+  reload_interval: 60
+
+# 日志设置
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: logs/app.log
+
+# API设置
+api:
+  timeout: 60
+  stream_timeout: 120
+  connect_timeout: 10
+  retry_count: 3
+  retry_delay: 1
+  rate_limit: 100

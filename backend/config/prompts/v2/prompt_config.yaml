@@ -1,0 +1,60 @@
+# 提示词配置 v2
+version: 2.0
+description: 增强版提示词模板
+
+# 业务模块分类
+modules:
+  # PPT生成模块
+  ppt:
+    name: PPT生成
+    description: 用于生成PPT内容的提示词
+    prompts:
+      # 标题生成
+      title:
+        name: 标题生成
+        description: 为PPT生成吸引人的标题
+        template: "请为主题 '{topic}' 生成5个吸引人的PPT标题，要求简洁明了，突出主题，具有专业性。"
+        examples:
+          - input: {topic: "人工智能发展趋势"}
+            output: "人工智能发展趋势：从理论到实践\nAI革命：重塑未来产业格局\n人工智能时代：机遇与挑战\nAI技术演进：过去、现在与未来\n人工智能：改变我们生活的力量"
+      
+      # 大纲生成
+      outline:
+        name: 大纲生成
+        description: 为PPT生成详细的大纲
+        template: "请为主题 '{topic}' 生成一个详细的PPT大纲，包含标题和每个章节的主要内容，要求结构清晰，逻辑连贯，内容专业。"
+        examples:
+          - input: {topic: "人工智能发展趋势"}
+            output: "1. 人工智能概述\n   - 什么是人工智能\n   - 人工智能的发展历程\n2. 当前AI技术现状\n   - 主流AI技术\n   - 技术突破与应用\n3. 未来发展趋势\n   - 技术发展方向\n   - 产业应用前景\n4. 挑战与机遇\n   - 技术挑战\n   - 社会影响\n   - 发展机遇\n5. 结论与展望"
+      
+      # 内容生成
+      content:
+        name: 内容生成
+        description: 为PPT生成详细内容
+        template: "请为主题 '{topic}' 的PPT章节 '{section}' 生成详细内容，要求专业、准确、有深度，适合作为PPT讲解材料。"
+        examples:
+          - input: {topic: "人工智能发展趋势", section: "当前AI技术现状"}
+            output: "当前AI技术已经取得了重大突破，主要表现在以下几个方面：\n1. 深度学习技术的快速发展，使得AI在图像识别、自然语言处理等领域达到了人类水平。\n2. 大语言模型的出现，如GPT系列、BERT等，大幅提升了AI理解和生成自然语言的能力。\n3. 计算机视觉技术的成熟，使得AI在目标检测、图像分割等任务上表现优异。\n4. 强化学习在游戏、机器人等领域的应用，展示了AI自主学习和决策的能力。\n5. 多模态AI的发展，实现了文本、图像、音频等多种数据的融合处理。"
+
+  # 文案生成模块
+  copywriting:
+    name: 文案生成
+    description: 用于生成各种文案的提示词
+    prompts:
+      # 营销文案
+      marketing:
+        name: 营销文案
+        description: 生成产品营销文案
+        template: "请为产品 '{product}' 生成一段营销文案，突出产品特点和优势，吸引目标客户，要求语言生动，具有感染力。"
+        examples:
+          - input: {product: "智能手表"}
+            output: "新一代智能手表，融合时尚设计与强大功能。实时健康监测，智能通知提醒，超长续航，让您的生活更智能、更健康。无论是工作还是运动，它都是您最贴心的伙伴。"
+      
+      # 社交媒体文案
+      social_media:
+        name: 社交媒体文案
+        description: 生成适合社交媒体的文案
+        template: "请为产品 '{product}' 生成一段适合社交媒体的文案，要求简短有力，吸引眼球，包含相关话题标签。"
+        examples:
+          - input: {product: "智能手表"}
+            output: "🌟 新一代智能手表震撼上市！\n📊 实时健康监测，掌握身体状态\n⚡ 超长续航，告别电量焦虑\n💪 运动模式全覆盖，助你达成健身目标\n#智能手表 #健康生活 #科技新品"
