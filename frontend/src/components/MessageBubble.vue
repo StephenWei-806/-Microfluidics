@@ -22,19 +22,40 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, nextTick } from 'vue'
 import { ChatDotRound, DocumentCopy } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Message } from '@/types'
-import { marked } from 'marked'
+import { marked, type RendererObject } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import mermaid from 'mermaid'
 
-marked.setOptions({
-  highlight: function(code, lang) {
-    const language = hljs.getLanguage(lang) ? lang : 'plaintext'
-    return hljs.highlight(code, { language }).value
-  }
+// 初始化 mermaid
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+})
+
+// 配置 marked 使用自定义 renderer（兼容 marked v12 API）
+marked.use({
+  renderer: {
+    code(code: string, infostring: string | undefined, _escaped: boolean): string {
+      const lang = (infostring ?? '').split(/\s+/)[0]
+      if (lang === 'mermaid') {
+        // mermaid 代码块输出特殊容器，源码 HTML 转义后放入
+        const escaped = code
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+        return `<div class="mermaid-container"><pre class="mermaid">${escaped}</pre></div>`
+      }
+      // 其他语言使用 highlight.js 高亮
+      const language = hljs.getLanguage(lang) ? lang : 'plaintext'
+      const highlighted = hljs.highlight(code, { language }).value
+      return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+    }
+  } as RendererObject
 })
 
 interface Props {
@@ -44,12 +65,37 @@ interface Props {
 const props = defineProps<Props>()
 
 const renderedContent = computed(() => {
-  // 只在非流式状态下进行 Markdown 解析
   if (props.message.isStreaming) {
     return ''
   }
-  return marked(props.message.content)
+  return marked(props.message.content) as string
 })
+
+// 当流式传输完成后，渲染 mermaid 图表
+watch(
+  () => props.message.isStreaming,
+  async (isStreaming) => {
+    if (!isStreaming) {
+      await nextTick()
+      try {
+        await mermaid.run({
+          querySelector: '.mermaid',
+        })
+      } catch (err) {
+        // 渲染失败时降级：将 .mermaid 元素内容替换为高亮源码显示
+        const containers = document.querySelectorAll<HTMLElement>('.mermaid-container')
+        containers.forEach((container) => {
+          const pre = container.querySelector('.mermaid')
+          if (pre && !pre.querySelector('svg')) {
+            const rawCode = pre.textContent ?? ''
+            const highlighted = hljs.highlight(rawCode, { language: 'plaintext' }).value
+            container.innerHTML = `<pre class="mermaid-fallback"><code class="hljs">${highlighted}</code></pre>`
+          }
+        })
+      }
+    }
+  }
+)
 
 function copyMessage() {
   navigator.clipboard.writeText(props.message.content)
@@ -161,6 +207,50 @@ function copyMessage() {
 
   .message-bubble:hover & {
     opacity: 1;
+  }
+}
+
+// Mermaid 图表容器样式
+:deep(.mermaid-container) {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 10px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow-x: auto;
+
+  .mermaid {
+    display: flex;
+    justify-content: center;
+
+    svg {
+      max-width: 100%;
+      height: auto;
+    }
+  }
+
+  // 用户消息（紫色背景）中的 mermaid 容器
+  .user-message & {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+// mermaid 渲染失败降级样式
+:deep(.mermaid-fallback) {
+  background: #f8f8f8;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0;
+
+  code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
   }
 }
 </style>
