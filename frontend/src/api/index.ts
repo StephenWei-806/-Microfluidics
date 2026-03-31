@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios'
-import type { ApiResponse, Message } from '@/types'
+import type { ApiResponse } from '@/types'
 
 const baseURL = '/api'
 
