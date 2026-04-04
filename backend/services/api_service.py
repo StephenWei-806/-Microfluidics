@@ -16,6 +16,7 @@ class ApiService:
         self.api_config = config_service.get_api_config()
         self.rate_limit_cache: Dict[str, Dict[str, Any]] = {}
         self.clients: Dict[str, Any] = {}  # 缓存API客户端
+        self._custom_chip_layout = None
     
     def get_api_config(self, api_name: str) -> Optional[Dict[str, Any]]:
         apis = self.api_config.get('apis', {})
@@ -93,6 +94,27 @@ class ApiService:
             logger.warning(f"加载提示词模板失败: {e}")
             return None
 
+    def set_custom_chip_layout(self, grid: List[List[int]]):
+        """设置自定义芯片网格布局"""
+        self._custom_chip_layout = grid
+        logger.info("自定义芯片网格布局已更新")
+
+    def get_current_chip_layout(self) -> Dict[str, Any]:
+        """获取当前生效的芯片网格配置"""
+        if self._custom_chip_layout is not None:
+            return {
+                'grid': self._custom_chip_layout,
+                'description': '用户自定义芯片网格布局'
+            }
+        # 从 YAML 加载默认值
+        prompt_config = self._load_prompt_template('v1')
+        if prompt_config and 'chip_layout' in prompt_config:
+            return prompt_config['chip_layout']
+        return {
+            'grid': [],
+            'description': '默认芯片网格布局'
+        }
+
     def _format_chip_layout(self, chip_layout: Dict[str, Any]) -> str:
         """格式化芯片布局数据为可读字符串"""
         try:
@@ -118,6 +140,11 @@ class ApiService:
             return user_input
 
         chip_layout = prompt_config.get('chip_layout', {})
+        # 如果存在自定义芯片布局，则替换
+        if self._custom_chip_layout is not None:
+            chip_layout = dict(chip_layout)  # 复制一份避免修改原配置
+            chip_layout['grid'] = self._custom_chip_layout
+            chip_layout['description'] = '用户自定义芯片网格布局'
         chip_layout_str = self._format_chip_layout(chip_layout)
 
         try:

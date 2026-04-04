@@ -71,6 +71,10 @@
             <el-icon><Check /></el-icon>
             保存配置
           </el-button>
+          <el-button @click="goToGridConfig">
+            <el-icon><Grid /></el-icon>
+            网格配置
+          </el-button>
           <el-tag v-if="form.isConfigValid" type="success">配置有效</el-tag>
           <el-tag v-else type="danger">配置无效</el-tag>
         </el-form-item>
@@ -83,7 +87,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Connection, Check } from '@element-plus/icons-vue'
+import { Connection, Check, Grid } from '@element-plus/icons-vue'
 import { useApiConfigStore } from '@/stores/apiConfig'
 import { apiClient } from '@/api'
 
@@ -154,6 +158,10 @@ async function saveConfig() {
   } finally {
     saving.value = false
   }
+}
+
+function goToGridConfig() {
+  router.push('/grid-config')
 }
 
 onMounted(() => {

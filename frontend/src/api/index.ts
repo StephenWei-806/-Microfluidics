@@ -213,6 +213,16 @@ export const apiClient = {
       params: { version }
     })
     return response.data
+  },
+
+  async getChipLayout(): Promise<ApiResponse<any>> {
+    const response = await api.get('/chip-layout')
+    return response.data
+  },
+
+  async updateChipLayout(grid: number[][]): Promise<ApiResponse<any>> {
+    const response = await api.post('/chip-layout', { grid })
+    return response.data
   }
 }
 

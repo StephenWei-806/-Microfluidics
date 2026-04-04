@@ -31,6 +31,10 @@
           <el-icon><Setting /></el-icon>
           API 配置
         </el-button>
+        <el-button @click="goToGridConfig" link>
+          <el-icon><Grid /></el-icon>
+          网格配置
+        </el-button>
       </div>
     </div>
 
@@ -81,7 +85,8 @@ import {
   Delete,
   Setting,
   VideoPause,
-  ChatDotRound
+  ChatDotRound,
+  Grid
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useApiConfigStore } from '@/stores/apiConfig'
@@ -124,6 +129,10 @@ async function deleteConversation(id: string) {
 
 function goToConfig() {
   router.push('/config')
+}
+
+function goToGridConfig() {
+  router.push('/grid-config')
 }
 
 function scrollToBottom() {

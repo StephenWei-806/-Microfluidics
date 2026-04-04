@@ -15,6 +15,11 @@ const routes: RouteRecordRaw[] = [
     path: '/config',
     name: 'Config',
     component: () => import('@/views/ApiConfig.vue')
+  },
+  {
+    path: '/grid-config',
+    name: 'GridConfig',
+    component: () => import('@/views/GridConfig.vue')
   }
 ]
 

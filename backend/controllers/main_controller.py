@@ -402,3 +402,62 @@ def stream_api():
         }
     )
     return response
+
+
+@main_bp.route('/chip-layout', methods=['GET'])
+@error_handler
+def get_chip_layout():
+    """获取当前生效的芯片网格配置"""
+    layout = api_service.get_current_chip_layout()
+    return jsonify({
+        'code': 200,
+        'message': 'ok',
+        'data': layout
+    })
+
+
+@main_bp.route('/chip-layout', methods=['POST'])
+@error_handler
+def update_chip_layout():
+    """更新芯片网格配置"""
+    data = request.get_json()
+    grid = data.get('grid')
+    
+    if grid is None:
+        return jsonify({
+            'code': 400,
+            'message': '缺少 grid 参数',
+            'data': None
+        }), 400
+    
+    # 校验格式
+    if not isinstance(grid, list) or len(grid) != 17:
+        return jsonify({
+            'code': 400,
+            'message': '网格必须为17行',
+            'data': None
+        }), 400
+    
+    for i, row in enumerate(grid):
+        if not isinstance(row, list) or len(row) != 22:
+            return jsonify({
+                'code': 400,
+                'message': f'第{i+1}行必须为22列',
+                'data': None
+            }), 400
+        for j, val in enumerate(row):
+            if not isinstance(val, int) or val < 0 or val > 128:
+                return jsonify({
+                    'code': 400,
+                    'message': f'网格值必须为0-128的整数 (行{i+1}, 列{j+1})',
+                    'data': None
+                }), 400
+    
+    api_service.set_custom_chip_layout(grid)
+    logger.info(f'[ChipLayout] 用户更新了芯片网格配置')
+    
+    return jsonify({
+        'code': 200,
+        'message': '芯片网格配置更新成功',
+        'data': None
+    })
