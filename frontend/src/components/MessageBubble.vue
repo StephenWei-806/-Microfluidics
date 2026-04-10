@@ -13,7 +13,7 @@
           <div v-else-if="seg.type === 'mermaid' && seg.renderError"
                class="mermaid-container">
             <div class="mermaid-error-hint">⚠ 图表语法错误，已降级显示源码</div>
-            <pre class="mermaid-fallback"><code class="hljs" v-html="seg.rendered"></code></pre>
+            <pre class="mermaid-fallback"><code class="hljs" v-html="seg.rendered || escapeHtml(seg.content)"></code></pre>
           </div>
           <div v-else-if="seg.type === 'mermaid'" class="mermaid-container mermaid-loading">
             <span>图表渲染中...</span>
@@ -29,10 +29,14 @@
           <div v-if="seg.type === 'text'" v-html="seg.rendered"></div>
           <div v-else-if="seg.type === 'mermaid' && seg.rendered && !seg.renderError" 
                class="mermaid-container" v-html="seg.rendered"></div>
-          <div v-else-if="seg.type === 'mermaid'"
+          <div v-else-if="seg.type === 'mermaid' && seg.renderError"
                class="mermaid-container">
             <div class="mermaid-error-hint">⚠ 图表语法错误，已降级显示源码</div>
-            <pre class="mermaid-fallback"><code class="hljs" v-html="seg.rendered"></code></pre>
+            <pre class="mermaid-fallback"><code class="hljs" v-html="seg.rendered || escapeHtml(seg.content)"></code></pre>
+          </div>
+          <div v-else-if="seg.type === 'mermaid'"
+               class="mermaid-container mermaid-loading">
+            <span>图表渲染中...</span>
           </div>
         </template>
       </div>
@@ -109,32 +113,71 @@ interface ContentSegment {
 // mermaid 代码块计数器，用于生成唯一 ID
 let mermaidCounter = 0
 
-// 预处理 mermaid 代码，处理嵌套括号等语法问题
+// 流式更新互斥锁，防止并发渲染问题
+let streamingUpdateLock = false
+let pendingStreamingUpdate = false
+
+// 流式更新防抖定时器
+let streamingDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// HTML特殊字符转义
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }
+  return text.replace(/[&<>"']/g, char => map[char])
+}
+
+// 预处理 mermaid 代码，统一为节点标签添加引号以兼容 v11 严格语法
 function sanitizeMermaidCode(code: string): string {
   let sanitized = code
 
-  // 处理 ((...)) 双圆括号（圆形节点）中包含特殊字符的标签
+  // 处理 ((...)) 双圆括号（圆形节点）
   sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\(\(([^"]*?[(),:;@#$%^&*\s][^"]*?)\)\)/g,
-    (_match, id, label) => `${id}(("${label.replace(/"/g, '#quot;')}"))`
+    /([a-zA-Z_]\w*)\(\(([^)]*)\)\)/g,
+    (_match, id, label) => {
+      const trimmed = label.trim()
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
+      return `${id}(("${label.replace(/"/g, '#quot;')}"))`
+    }
   )
 
-  // 处理 (...) 单圆括号（圆角节点）中包含特殊字符的标签
+  // 处理 (...) 单圆括号（圆角节点）— 排除已处理的双圆括号
   sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\(([^("][^"]*?[(),:;@#$%^&*\s][^"]*?)\)/g,
-    (_match, id, label) => `${id}("${label.replace(/"/g, '#quot;')}")`
+    /([a-zA-Z_]\w*)\(([^("][^)]*)\)/g,
+    (_match, id, label) => {
+      const trimmed = label.trim()
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
+      // 跳过纯英文字母数字标签（mermaid 原生支持）
+      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
+      return `${id}("${label.replace(/"/g, '#quot;')}")`
+    }
   )
 
-  // 处理 [...] 方括号（矩形节点）中包含特殊字符的标签
+  // 处理 [...] 方括号（矩形节点）
   sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\[([^\["][^"]*?[(),:;@#$%^&*\s][^"]*?)\]/g,
-    (_match, id, label) => `${id}["${label.replace(/"/g, '#quot;')}"]`
+    /([a-zA-Z_]\w*)\[([^\]]*)\]/g,
+    (_match, id, label) => {
+      const trimmed = label.trim()
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
+      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
+      return `${id}["${label.replace(/"/g, '#quot;')}"]`
+    }
   )
 
-  // 处理 {...} 菱形节点（决策框）中包含特殊字符的标签
+  // 处理 {...} 菱形节点（决策框）
   sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\{([^"]*?[(),:;@#$%^&*\s][^"]*?)\}/g,
-    (_match, id, label) => `${id}{"${label.replace(/"/g, '#quot;')}"}`
+    /([a-zA-Z_]\w*)\{([^}]*)\}/g,
+    (_match, id, label) => {
+      const trimmed = label.trim()
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
+      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
+      return `${id}{"${label.replace(/"/g, '#quot;')}"}`
+    }
   )
 
   return sanitized
@@ -175,9 +218,11 @@ const renderedMermaidHashes = ref<Set<string>>(new Set())
 
 // 计算内容的简单 hash，用于去重
 function hashContent(content: string): string {
+  // 对 content 做 trim 后再计算 hash，避免流式传输中末尾空白变化导致 hash 不同
+  const trimmed = content.trim()
   let hash = 0
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i)
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed.charCodeAt(i)
     hash = ((hash << 5) - hash) + char
     hash = hash & hash
   }
@@ -214,7 +259,9 @@ function parseContent(content: string): {
     if (mermaidCode) {
       segments.push({
         type: 'mermaid',
-        content: mermaidCode
+        content: mermaidCode,
+        rendered: undefined,    // 初始化 rendered 属性，确保 Vue 响应式追踪
+        renderError: false
       })
     }
     
@@ -259,12 +306,25 @@ function parseContent(content: string): {
   }
 }
 
+// 带超时的 mermaid 渲染辅助函数
+const renderWithTimeout = (renderId: string, code: string, timeoutMs = 10000): Promise<{ svg: string }> => {
+  return Promise.race([
+    mermaid.render(renderId, code),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Mermaid 渲染超时 (${timeoutMs}ms)`)), timeoutMs)
+    )
+  ])
+}
+
 // 渲染单个 mermaid 段落
 async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
   if (segment.type !== 'mermaid' || segment.rendered) return
 
   const contentHash = hashContent(segment.content)
   if (renderedMermaidHashes.value.has(contentHash)) return
+
+  // 提前注册 hash，防止并发重复渲染
+  renderedMermaidHashes.value.add(contentHash)
 
   const id = `mermaid-${Date.now()}-${mermaidCounter++}`
   segment.id = id
@@ -279,9 +339,9 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
   }
 
   try {
-    const { svg } = await mermaid.render(id, sanitizedCode)
+    const { svg } = await renderWithTimeout(id, sanitizedCode)
     segment.rendered = svg
-    renderedMermaidHashes.value.add(contentHash)
+    segment.renderError = false  // 确保显式设置成功状态
     console.debug('[Mermaid] 渲染成功', { id, codeChanged })
   } catch (err) {
     console.error('[Mermaid] 净化代码渲染失败:', { error: err, id, codeChanged, contentLength: segment.content.length })
@@ -297,9 +357,9 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
       const retryId = `mermaid-${Date.now()}-${mermaidCounter++}`
       segment.id = retryId
       try {
-        const { svg } = await mermaid.render(retryId, segment.content)
+        const { svg } = await renderWithTimeout(retryId, segment.content)
         segment.rendered = svg
-        renderedMermaidHashes.value.add(contentHash)
+        segment.renderError = false  // 确保显式设置成功状态
         console.debug('[Mermaid] 原始代码重试渲染成功', { retryId })
         return
       } catch (retryErr) {
@@ -313,10 +373,18 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
     }
 
     segment.renderError = true
-    // 降级为高亮源码
-    const highlighted = hljs.highlight(segment.content, { language: 'plaintext' }).value
-    segment.rendered = highlighted
-    console.warn('[Mermaid] 已降级为源码高亮显示', { id })
+    // 降级为高亮源码，优先使用净化后的代码
+    const codeToDisplay = codeChanged ? sanitizedCode : segment.content
+    try {
+      const highlighted = hljs.highlight(codeToDisplay, { language: 'plaintext' }).value
+      segment.rendered = highlighted
+    } catch (hlErr) {
+      // 高亮处理也失败，使用纯HTML转义保底
+      console.error('[Mermaid] 高亮处理失败，使用纯文本:', hlErr)
+      segment.rendered = escapeHtml(codeToDisplay)
+    }
+    console.warn('[Mermaid] 已降级为源码高亮显示', { id, codeChanged })
+    // 注意：降级显示也是有效结果，不移除 hash，避免无限重试
   }
 }
 
@@ -553,33 +621,52 @@ documentClickCleanup = () => {
 
 // 更新流式传输中的内容
 async function updateStreamingContent() {
-  const { segments, hasUnclosedMermaid, trailingText } = parseContent(props.message.content)
-  
-  // 保留已渲染的 mermaid 段落的渲染结果
-  const existingRendered = new Map<string, ContentSegment>()
-  streamSegments.value.forEach(seg => {
-    if (seg.type === 'mermaid' && seg.rendered) {
-      existingRendered.set(hashContent(seg.content), seg)
-    }
-  })
-  
-  // 合并新的段落和已渲染的结果
-  streamSegments.value = segments.map(seg => {
-    if (seg.type === 'mermaid') {
-      const hash = hashContent(seg.content)
-      const existing = existingRendered.get(hash)
-      if (existing) {
-        return { ...existing }
+  // 互斥锁检查：如果已有更新在执行，标记待处理并返回
+  if (streamingUpdateLock) {
+    pendingStreamingUpdate = true
+    return
+  }
+  streamingUpdateLock = true
+
+  try {
+    const { segments, hasUnclosedMermaid, trailingText } = parseContent(props.message.content)
+
+    // 保留已处理的 mermaid 段落的渲染结果（包括成功渲染和降级显示的）
+    const existingRendered = new Map<string, ContentSegment>()
+    streamSegments.value.forEach(seg => {
+      if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
+        existingRendered.set(hashContent(seg.content), seg)
       }
+    })
+
+    // 合并新的段落和已渲染的结果
+    streamSegments.value = segments.map(seg => {
+      if (seg.type === 'mermaid') {
+        const hash = hashContent(seg.content)
+        const existing = existingRendered.get(hash)
+        if (existing) {
+          return { ...existing }
+        }
+      }
+      return seg
+    })
+
+    trailingStreamText.value = hasUnclosedMermaid ? trailingText : ''
+
+    // 渲染新出现的 mermaid 段落
+    await nextTick()
+    await renderAllMermaidSegments(streamSegments.value)
+    // 强制触发 Vue 响应式更新（渲染会修改 segment 内部属性，Vue 无法自动检测）
+    streamSegments.value = [...streamSegments.value]
+  } finally {
+    streamingUpdateLock = false
+    // 如果有待处理的更新，使用 nextTick 确保不会同步重入
+    if (pendingStreamingUpdate) {
+      pendingStreamingUpdate = false
+      await nextTick()
+      updateStreamingContent()
     }
-    return seg
-  })
-  
-  trailingStreamText.value = hasUnclosedMermaid ? trailingText : ''
-  
-  // 渲染新出现的 mermaid 段落
-  await nextTick()
-  await renderAllMermaidSegments(streamSegments.value)
+  }
 }
 
 // 更新流式完成后的最终内容
@@ -609,7 +696,9 @@ async function updateFinalContent() {
   // 渲染所有 mermaid 段落
   await nextTick()
   await renderAllMermaidSegments(finalSegments.value)
-  
+  // 强制触发 Vue 响应式更新
+  finalSegments.value = [...finalSegments.value]
+
   // 添加事件监听
   await nextTick()
   addMermaidEventListeners()
@@ -618,9 +707,13 @@ async function updateFinalContent() {
 // 监听内容变化（流式传输中）
 watch(
   () => props.message.content,
-  async () => {
+  () => {
     if (props.message.isStreaming) {
-      await updateStreamingContent()
+      // 防抖处理：仅在流式传输时添加 80ms 延迟，平衡实时性和性能
+      if (streamingDebounceTimer) clearTimeout(streamingDebounceTimer)
+      streamingDebounceTimer = setTimeout(() => {
+        updateStreamingContent()
+      }, 80)
     }
   },
   { immediate: true }
@@ -659,6 +752,11 @@ onUnmounted(() => {
   if (documentClickCleanup) {
     documentClickCleanup()
     documentClickCleanup = null
+  }
+  // 清理防抖定时器
+  if (streamingDebounceTimer) {
+    clearTimeout(streamingDebounceTimer)
+    streamingDebounceTimer = null
   }
 })
 </script>
