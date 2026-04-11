@@ -33,6 +33,16 @@ chip_layout_service = ChipLayoutService(config_service, persist_dir='./data')
 api_service = ApiService(config_service, chip_layout_service, prompt_service)
 
 def error_handler(func):
+    """错误处理装饰器
+    
+    捕获被装饰函数中的异常，统一返回JSON格式的错误响应。
+    
+    Args:
+        func: 被装饰的函数
+        
+    Returns:
+        wrapper: 包装后的函数，捕获异常并返回统一格式的错误响应
+    """
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
@@ -47,6 +57,16 @@ def error_handler(func):
 
 @main_bp.route('/health', methods=['GET'])
 def health_check():
+    """健康检查接口
+    
+    返回服务运行状态和健康信息。
+    
+    Returns:
+        Response: JSON响应，包含服务状态信息
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 包含status和service字段的字典
+    """
     return jsonify({
         'code': 200,
         'message': 'ok',
@@ -59,6 +79,16 @@ def health_check():
 @main_bp.route('/settings', methods=['GET'])
 @error_handler
 def get_settings():
+    """获取系统设置
+    
+    返回当前系统的配置设置信息。
+    
+    Returns:
+        Response: JSON响应，包含系统设置数据
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 系统设置字典
+    """
     settings = config_service.get_settings()
     return jsonify({
         'code': 200,
@@ -69,6 +99,16 @@ def get_settings():
 @main_bp.route('/api/config', methods=['GET'])
 @error_handler
 def get_api_config():
+    """获取API配置
+    
+    返回当前配置的API信息（不包含敏感信息如API密钥）。
+    
+    Returns:
+        Response: JSON响应，包含API配置数据
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: API配置字典
+    """
     api_config = config_service.get_api_config()
     return jsonify({
         'code': 200,
@@ -79,6 +119,21 @@ def get_api_config():
 @main_bp.route('/api/key', methods=['POST'])
 @error_handler
 def update_api_key():
+    """更新API密钥
+    
+    更新指定API的访问密钥。
+    
+    Args:
+        从请求JSON中获取:
+        - api_name: API名称
+        - api_key: 新的API密钥
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200成功或400失败
+        - message: 操作结果描述
+        - data: 包含api_name的字典
+    """
     data = request.get_json()
     api_name = data.get('api_name')
     api_key = data.get('api_key')
@@ -100,6 +155,16 @@ def update_api_key():
 @main_bp.route('/prompts/versions', methods=['GET'])
 @error_handler
 def get_prompt_versions():
+    """获取所有提示词版本
+    
+    返回系统中所有可用的提示词版本列表及历史记录。
+    
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 包含versions和history的字典
+    """
     versions = prompt_service.get_all_versions()
     version_history = prompt_service.get_version_history()
     return jsonify({
@@ -114,6 +179,19 @@ def get_prompt_versions():
 @main_bp.route('/prompts/modules', methods=['GET'])
 @error_handler
 def get_prompt_modules():
+    """获取提示词模块列表
+    
+    返回指定版本下的所有提示词模块。
+    
+    Args:
+        version: 查询参数，提示词版本，默认为'v1'
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 模块列表
+    """
     version = request.args.get('version', 'v1')
     modules = prompt_service.get_modules(version)
     return jsonify({
@@ -125,6 +203,20 @@ def get_prompt_modules():
 @main_bp.route('/prompts/<module_name>', methods=['GET'])
 @error_handler
 def get_module_prompts(module_name):
+    """获取指定模块的提示词
+    
+    返回指定模块和版本下的所有提示词。
+    
+    Args:
+        module_name: URL参数，模块名称
+        version: 查询参数，提示词版本，默认为'v1'
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200成功或404模块不存在
+        - message: 状态描述
+        - data: 提示词列表或None
+    """
     version = request.args.get('version', 'v1')
     prompts = prompt_service.get_prompts(module_name, version)
     if prompts is None:
@@ -142,6 +234,23 @@ def get_module_prompts(module_name):
 @main_bp.route('/prompts/render', methods=['POST'])
 @error_handler
 def render_prompt():
+    """渲染提示词模板
+    
+    根据参数渲染指定的提示词模板。
+    
+    Args:
+        从请求JSON中获取:
+        - module_name: 模块名称（必填）
+        - prompt_name: 提示词名称（必填）
+        - params: 模板参数，默认为空字典
+        - version: 提示词版本，默认为'v1'
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200成功或400参数缺失
+        - message: 状态描述
+        - data: 包含渲染后prompt的字典
+    """
     data = request.get_json()
     module_name = data.get('module_name')
     prompt_name = data.get('prompt_name')
@@ -167,6 +276,20 @@ def render_prompt():
 @main_bp.route('/prompts/search', methods=['GET'])
 @error_handler
 def search_prompts():
+    """搜索提示词
+    
+    根据关键词搜索提示词。
+    
+    Args:
+        keyword: 查询参数，搜索关键词（必填）
+        version: 查询参数，提示词版本，默认为'v1'
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200成功或400参数缺失
+        - message: 状态描述
+        - data: 搜索结果列表
+    """
     keyword = request.args.get('keyword', '')
     version = request.args.get('version', 'v1')
     
@@ -187,6 +310,19 @@ def search_prompts():
 @main_bp.route('/prompts/statistics', methods=['GET'])
 @error_handler
 def get_prompt_statistics():
+    """获取提示词统计信息
+    
+    返回指定版本提示词的统计信息。
+    
+    Args:
+        version: 查询参数，提示词版本，默认为'v1'
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 统计信息字典
+    """
     version = request.args.get('version', 'v1')
     statistics = prompt_service.get_prompt_statistics(version)
     return jsonify({
@@ -198,6 +334,19 @@ def get_prompt_statistics():
 @main_bp.route('/api/models/<api_name>', methods=['GET'])
 @error_handler
 def get_api_models(api_name):
+    """获取API支持的模型列表
+    
+    返回指定API支持的所有模型。
+    
+    Args:
+        api_name: URL参数，API名称
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 包含api_name和models的字典
+    """
     models = api_service.get_models(api_name)
     return jsonify({
         'code': 200,
@@ -211,6 +360,19 @@ def get_api_models(api_name):
 @main_bp.route('/api/validate/<api_name>', methods=['GET'])
 @error_handler
 def validate_api_config(api_name):
+    """验证API配置
+    
+    验证指定API的配置是否有效。
+    
+    Args:
+        api_name: URL参数，API名称
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200
+        - message: 状态描述
+        - data: 包含api_name和valid验证结果的字典
+    """
     valid = api_service.validate_api_config(api_name)
     return jsonify({
         'code': 200,
@@ -224,6 +386,24 @@ def validate_api_config(api_name):
 @main_bp.route('/api/call', methods=['POST'])
 @error_handler
 def call_api():
+    """调用API进行聊天完成
+    
+    同步调用指定API进行聊天完成请求。
+    
+    Args:
+        从请求JSON中获取:
+        - api_name: API名称（必填）
+        - model: 模型名称（必填）
+        - prompt: 用户提示词（必填）
+        - max_tokens: 最大token数，默认1024
+        - temperature: 采样温度，默认0.7
+        
+    Returns:
+        Response: JSON响应
+        - code: HTTP状态码200成功或400参数缺失
+        - message: 状态描述
+        - data: API响应数据
+    """
     data = request.get_json()
     api_name = data.get('api_name')
     model = data.get('model')
@@ -250,6 +430,22 @@ def call_api():
     })
 
 def stream_api_response(api_name, model, prompt, **kwargs):
+    """SSE流式响应生成器
+    
+    生成SSE格式的流式响应数据，用于Server-Sent Events推送。
+    
+    Args:
+        api_name: API名称
+        model: 模型名称
+        prompt: 用户提示词
+        **kwargs: 额外的请求参数（max_tokens, temperature等）
+        
+    Yields:
+        str: SSE格式的数据行（data: {...}\n\n）
+        
+    Raises:
+        不抛出异常，内部捕获并返回错误信息
+    """
     logger.info(f'[SSE] 开始发送SSE流: api_name={api_name}, model={model}')
     try:
         for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
@@ -372,6 +568,23 @@ def stream_by_id(stream_id):
 @main_bp.route('/stream', methods=['POST'])
 @error_handler
 def stream_api():
+    """流式API调用接口（POST方式）
+    
+    通过POST请求建立SSE流式连接，实时返回API响应。
+    
+    Args:
+        从请求JSON中获取:
+        - api_name: API名称（必填）
+        - model: 模型名称（必填）
+        - prompt: 用户提示词（必填）
+        - max_tokens: 最大token数，默认1024
+        - temperature: 采样温度，默认0.7
+        
+    Returns:
+        Response: SSE流式响应或JSON错误响应
+        - 成功时返回text/event-stream格式的流数据
+        - 参数缺失时返回400错误
+    """
     data = request.get_json()
     api_name = data.get('api_name')
     model = data.get('model')

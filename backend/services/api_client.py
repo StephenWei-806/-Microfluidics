@@ -9,9 +9,28 @@ from utils.api_utils import ChatCompletionRequest, ChatCompletionResponse, build
 from utils.common_utils import build_headers
 
 class BaseApiClient(abc.ABC):
-    """API客户端抽象基类"""
+    """API客户端抽象基类
+    
+    定义所有API客户端必须实现的接口，提供通用的配置初始化和请求头构建功能。
+    子类需要实现chat_completions、stream_chat_completions和get_models方法。
+    """
     
     def __init__(self, config: Dict[str, Any]):
+        """初始化API客户端
+        
+        Args:
+            config: 客户端配置字典，包含以下字段:
+                - api_key: API密钥
+                - base_url: API基础URL
+                - auth_method: 认证方式，默认为'bearer'
+                - timeout: 请求超时时间（秒），默认60
+                - stream_timeout: 流式请求超时时间（秒），默认120
+                - connect_timeout: 连接超时时间（秒），默认10
+                - retry_count: 重试次数，默认3
+                - retry_delay: 重试延迟（秒），默认1
+                - request_mapping: 请求参数映射配置
+                - response_mapping: 响应参数映射配置
+        """
         self.config = config
         self.api_key = config.get('api_key')
         self.base_url = config.get('base_url')
@@ -26,23 +45,64 @@ class BaseApiClient(abc.ABC):
     
     @abc.abstractmethod
     def chat_completions(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """执行聊天完成请求（非流式）
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Returns:
+            ChatCompletionResponse: 聊天完成响应对象
+            
+        Raises:
+            子类实现可能抛出各种API调用异常
+        """
         pass
     
     @abc.abstractmethod
     def stream_chat_completions(self, request: ChatCompletionRequest) -> Generator[Dict[str, Any], None, None]:
+        """执行聊天完成请求（流式）
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Yields:
+            Dict[str, Any]: 流式响应数据块
+            
+        Raises:
+            子类实现可能抛出各种API调用异常
+        """
         pass
     
     @abc.abstractmethod
     def get_models(self) -> List[str]:
+        """获取支持的模型列表
+        
+        Returns:
+            List[str]: 模型名称列表
+        """
         pass
     
     def _build_headers(self) -> Dict[str, str]:
+        """构建请求头
+        
+        Returns:
+            Dict[str, str]: 包含认证信息的请求头字典
+        """
         return build_headers(self.api_key, self.auth_method)
 
 class OpenAIClient(BaseApiClient):
-    """OpenAI兼容的API客户端（用于DeepSeek API）"""
+    """OpenAI兼容的API客户端（用于DeepSeek API）
+    
+    支持OpenAI API格式的客户端实现，可用于DeepSeek等兼容OpenAI规范的API服务。
+    使用openai库进行底层通信。
+    """
     
     def __init__(self, config: Dict[str, Any]):
+        """初始化OpenAI客户端
+        
+        Args:
+            config: 客户端配置字典，包含api_key、base_url等
+        """
         super().__init__(config)
         self.client = OpenAI(
             api_key=self.api_key,
@@ -50,6 +110,17 @@ class OpenAIClient(BaseApiClient):
         )
     
     def chat_completions(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """执行非流式聊天完成请求
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Returns:
+            ChatCompletionResponse: 解析后的统一响应对象
+            
+        Raises:
+            OpenAIError: API调用失败时抛出
+        """
         response = self.client.chat.completions.create(
             model=request.model,
             messages=request.messages,
@@ -68,6 +139,17 @@ class OpenAIClient(BaseApiClient):
         return parse_openai_response(response)
     
     def stream_chat_completions(self, request: ChatCompletionRequest) -> Generator[Dict[str, Any], None, None]:
+        """执行流式聊天完成请求
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Yields:
+            Dict[str, Any]: 流式响应数据块
+            
+        Raises:
+            OpenAIError: API调用失败时抛出
+        """
         response = self.client.chat.completions.create(
             model=request.model,
             messages=request.messages,
@@ -88,13 +170,27 @@ class OpenAIClient(BaseApiClient):
             yield chunk_data
     
     def get_models(self) -> List[str]:
+        """获取支持的模型列表
+        
+        Returns:
+            List[str]: 模型名称列表
+        """
         models = self.config.get('models', [])
         return [model['name'] for model in models]
 
 class QwenClient(BaseApiClient):
-    """千问API客户端（适配OpenAI规范）"""
+    """千问API客户端（适配OpenAI规范）
+    
+    阿里云千问(DashScope) API的客户端实现，将千问API适配为OpenAI兼容格式。
+    使用requests库进行HTTP通信，支持重试机制和流式响应。
+    """
     
     def __init__(self, config: Dict[str, Any]):
+        """初始化千问客户端
+        
+        Args:
+            config: 客户端配置字典，包含api_key、base_url等
+        """
         super().__init__(config)
         self.session = requests.Session()
         retry_strategy = Retry(
@@ -108,12 +204,39 @@ class QwenClient(BaseApiClient):
         self.session.mount("http://", adapter)
     
     def _build_qwen_request(self, request: ChatCompletionRequest) -> Dict[str, Any]:
+        """构建千问API请求格式
+        
+        Args:
+            request: 统一的聊天完成请求对象
+            
+        Returns:
+            Dict[str, Any]: 千问API格式的请求字典
+        """
         return build_qwen_request(request)
     
     def _parse_qwen_response(self, response_data: Dict[str, Any]) -> ChatCompletionResponse:
+        """解析千问API响应
+        
+        Args:
+            response_data: 千问API原始响应数据
+            
+        Returns:
+            ChatCompletionResponse: 解析后的统一响应对象
+        """
         return parse_qwen_response(response_data)
     
     def chat_completions(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """执行非流式聊天完成请求
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Returns:
+            ChatCompletionResponse: 解析后的统一响应对象
+            
+        Raises:
+            requests.RequestException: HTTP请求失败时抛出
+        """
         qwen_request = self._build_qwen_request(request)
         headers = self._build_headers()
         
@@ -128,6 +251,20 @@ class QwenClient(BaseApiClient):
         return self._parse_qwen_response(response_data)
     
     def stream_chat_completions(self, request: ChatCompletionRequest) -> Generator[Dict[str, Any], None, None]:
+        """执行流式聊天完成请求
+        
+        通过SSE协议获取流式响应，并将千问格式转换为OpenAI兼容格式。
+        千问API返回的是累积文本，需要计算增量内容。
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Yields:
+            Dict[str, Any]: 流式响应数据块，OpenAI兼容格式
+            
+        Raises:
+            requests.RequestException: HTTP请求失败时抛出
+        """
         qwen_request = self._build_qwen_request(request)
         qwen_request['parameters']['stream'] = True
         headers = self._build_headers()
@@ -198,11 +335,20 @@ class QwenClient(BaseApiClient):
                         }
     
     def get_models(self) -> List[str]:
+        """获取支持的模型列表
+        
+        Returns:
+            List[str]: 模型名称列表
+        """
         models = self.config.get('models', [])
         return [model['name'] for model in models]
 
 class ApiClientFactory:
-    """API客户端工厂类"""
+    """API客户端工厂类
+    
+    使用工厂模式管理API客户端的创建，支持动态注册新的客户端类型。
+    通过api_type配置自动选择对应的客户端实现类。
+    """
     
     # 注册的API客户端类
     _client_registry = {
@@ -212,13 +358,38 @@ class ApiClientFactory:
     
     @classmethod
     def register_client(cls, api_type: str, client_class):
+        """注册新的API客户端类型
+        
+        Args:
+            api_type: API类型标识符
+            client_class: 客户端类，必须是BaseApiClient的子类
+        """
         cls._client_registry[api_type] = client_class
     
     @classmethod
     def create_client(cls, api_name: str, config: Dict[str, Any]) -> BaseApiClient:
+        """创建API客户端实例
+        
+        根据配置中的api_type自动选择对应的客户端类并创建实例。
+        
+        Args:
+            api_name: API名称（用于日志标识）
+            config: 客户端配置字典，必须包含api_type字段
+            
+        Returns:
+            BaseApiClient: API客户端实例
+            
+        Raises:
+            KeyError: 当api_type未注册时抛出
+        """
         api_type = config.get('api_type', 'openai')
         return cls._client_registry[api_type](config)
     
     @classmethod
     def get_supported_api_types(cls) -> List[str]:
+        """获取支持的API类型列表
+        
+        Returns:
+            List[str]: 已注册的API类型标识符列表
+        """
         return list(cls._client_registry.keys())

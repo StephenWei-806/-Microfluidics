@@ -1,7 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
 from controllers.main_controller import main_bp, config_service, chip_layout_service
-from services.chip_layout_service import ChipLayoutService
 import os
 import logging
 
@@ -39,6 +38,14 @@ logging.basicConfig(
 # 健康检查路由
 @app.route('/')
 def index():
+    """根路由处理函数，返回服务状态信息
+    
+    Returns:
+        dict: 包含服务状态信息的字典
+        - message: 服务描述信息
+        - version: 服务版本号
+        - status: 服务健康状态
+    """
     return {
         'message': '微流控后端服务运行中',
         'version': '1.0.0',
@@ -48,6 +55,17 @@ def index():
 # 错误处理
 @app.errorhandler(404)
 def not_found(error):
+    """404错误处理函数
+    
+    Args:
+        error: Flask错误对象
+        
+    Returns:
+        tuple: (包含错误信息的字典, HTTP状态码404)
+        - code: 错误代码404
+        - message: 错误描述信息
+        - data: 数据字段，固定为None
+    """
     return {
         'code': 404,
         'message': '接口不存在',
@@ -56,6 +74,17 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    """500错误处理函数
+    
+    Args:
+        error: Flask错误对象
+        
+    Returns:
+        tuple: (包含错误信息的字典, HTTP状态码500)
+        - code: 错误代码500
+        - message: 错误描述信息
+        - data: 数据字段，固定为None
+    """
     return {
         'code': 500,
         'message': '服务器内部错误',

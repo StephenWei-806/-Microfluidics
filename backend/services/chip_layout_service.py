@@ -15,6 +15,12 @@ class ChipLayoutService:
     MAX_VALUE = 128
     
     def __init__(self, config_service: ConfigService, persist_dir: str = './data'):
+        """初始化芯片布局服务
+        
+        Args:
+            config_service: 配置服务实例
+            persist_dir: 持久化数据存储目录，默认'./data'
+        """
         self.config_service = config_service
         self.persist_dir = persist_dir
         self._custom_layout: Optional[Dict[str, Any]] = None
@@ -44,7 +50,12 @@ class ChipLayoutService:
         return {'grid': [], 'description': '默认芯片网格布局'}
     
     def set_custom_layout(self, grid: List[List[int]], description: str = '用户自定义芯片网格布局'):
-        """设置自定义网格并持久化"""
+        """设置自定义网格并持久化
+        
+        Args:
+            grid: 网格数据，二维整数列表
+            description: 布局描述信息
+        """
         self._custom_layout = {
             'grid': grid,
             'description': description,
@@ -100,7 +111,16 @@ class ChipLayoutService:
         return len(errors) == 0, errors
     
     def format_for_prompt(self, layout: Dict[str, Any] = None) -> str:
-        """格式化网格数据为 LLM 可读的文本"""
+        """格式化网格数据为 LLM 可读的文本
+        
+        将网格配置转换为自然语言描述格式，便于在提示词中使用。
+        
+        Args:
+            layout: 布局数据字典，为None时使用当前布局
+            
+        Returns:
+            str: 格式化后的文本描述
+        """
         try:
             if layout is None:
                 layout = self.get_current_layout()
@@ -124,12 +144,25 @@ class ChipLayoutService:
             return ''
     
     def get_statistics(self) -> Dict[str, Any]:
-        """返回网格统计信息"""
+        """返回网格统计信息
+        
+        计算并返回网格的统计信息，包括总单元格数、可到达单元格数等。
+        
+        Returns:
+            Dict[str, Any]: 统计信息字典，包含:
+                - total_cells: 总单元格数
+                - reachable_cells: 可到达单元格数（值不为0的单元格）
+                - forbidden_cells: 禁止单元格数（值为0的单元格）
+                - rows: 行数
+                - cols: 列数
+                - is_custom: 是否为自定义布局
+                - description: 布局描述
+        """
         layout = self.get_current_layout()
         grid = layout.get('grid', [])
         
         if not grid:
-            return {'total_cells': 0, 'reachable_cells': 0, 'forbidden_cells': 0, 'is_custom': False}
+            return {'total_cells': 0, 'reachable_cells': 0, 'forbidden_cells': 0, 'rows': 0, 'cols': 0, 'is_custom': False, 'description': ''}
         
         total = sum(len(row) for row in grid)
         reachable = sum(1 for row in grid for cell in row if cell != 0)

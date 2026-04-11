@@ -333,16 +333,10 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
   const sanitizedCode = sanitizeMermaidCode(segment.content)
   const codeChanged = sanitizedCode !== segment.content
 
-  // 如果代码发生变化，记录净化日志
-  if (codeChanged) {
-    console.debug('[Mermaid] 代码已净化', { id, originalLength: segment.content.length, sanitizedLength: sanitizedCode.length })
-  }
-
   try {
     const { svg } = await renderWithTimeout(id, sanitizedCode)
     segment.rendered = svg
     segment.renderError = false  // 确保显式设置成功状态
-    console.debug('[Mermaid] 渲染成功', { id, codeChanged })
   } catch (err) {
     console.error('[Mermaid] 净化代码渲染失败:', { error: err, id, codeChanged, contentLength: segment.content.length })
 
@@ -360,7 +354,6 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
         const { svg } = await renderWithTimeout(retryId, segment.content)
         segment.rendered = svg
         segment.renderError = false  // 确保显式设置成功状态
-        console.debug('[Mermaid] 原始代码重试渲染成功', { retryId })
         return
       } catch (retryErr) {
         console.error('[Mermaid] 原始代码重试渲染失败:', { error: retryErr, retryId })
@@ -383,7 +376,6 @@ async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
       console.error('[Mermaid] 高亮处理失败，使用纯文本:', hlErr)
       segment.rendered = escapeHtml(codeToDisplay)
     }
-    console.warn('[Mermaid] 已降级为源码高亮显示', { id, codeChanged })
     // 注意：降级显示也是有效结果，不移除 hash，避免无限重试
   }
 }

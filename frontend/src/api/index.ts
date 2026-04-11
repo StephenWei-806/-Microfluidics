@@ -13,71 +13,15 @@ const api: AxiosInstance = axios.create({
 
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    console.group(`%c[API Response] ${response.config.method?.toUpperCase()} ${response.config.url}`, 'color: #4CAF50; font-weight: bold')
-    console.log('Status:', response.status, response.statusText)
-    console.log('Headers:', response.headers)
-    console.log('Data:', response.data)
-    console.groupEnd()
     return response
   },
   (error: AxiosError) => {
-    if (error.response) {
-      console.group(`%c[API Error] ${error.config?.method?.toUpperCase()} ${error.config?.url}`, 'color: #F44336; font-weight: bold')
-      console.log('Status:', error.response.status, error.response.statusText)
-      console.log('Headers:', error.response.headers)
-      console.log('Data:', error.response.data)
-      console.groupEnd()
-    } else if (error.request) {
-      console.group(`%c[API Error] No Response`, 'color: #F44336; font-weight: bold')
-      console.log('Request:', error.request)
-      console.log('Message:', error.message)
-      console.groupEnd()
-    } else {
+    if (!error.response && !error.request) {
       console.error('[API Error]', error.message)
     }
     return Promise.reject(error)
   }
 )
-
-async function fetchWithLogger(url: string, options: RequestInit = {}): Promise<Response> {
-  const startTime = Date.now()
-  console.group(`%c[Fetch Request] ${options.method || 'GET'} ${url}`, 'color: #2196F3; font-weight: bold')
-  console.log('Options:', options)
-  console.groupEnd()
-
-  try {
-    const response = await fetch(url, options)
-    const duration = Date.now() - startTime
-    
-    console.group(`%c[Fetch Response] ${options.method || 'GET'} ${url}`, 'color: #4CAF50; font-weight: bold')
-    console.log('Status:', response.status, response.statusText)
-    console.log('Duration:', `${duration}ms`)
-    console.log('Headers:', Object.fromEntries(response.headers.entries()))
-    
-    const contentType = response.headers.get('content-type')
-    if (contentType && contentType.includes('text/event-stream')) {
-      console.log('Body: [SSE Stream - chunks will be logged separately]')
-    } else {
-      const clonedResponse = response.clone()
-      try {
-        const body = await clonedResponse.text()
-        console.log('Body:', body.length > 1000 ? body.substring(0, 1000) + '...(truncated)' : body)
-      } catch {
-        console.log('Body: [Unable to read]')
-      }
-    }
-    console.groupEnd()
-    
-    return response
-  } catch (error) {
-    const duration = Date.now() - startTime
-    console.group(`%c[Fetch Error] ${options.method || 'GET'} ${url}`, 'color: #F44336; font-weight: bold')
-    console.log('Duration:', `${duration}ms`)
-    console.log('Error:', error)
-    console.groupEnd()
-    throw error
-  }
-}
 
 export const apiClient = {
   async getSettings(): Promise<ApiResponse<any>> {
@@ -126,80 +70,13 @@ export const apiClient = {
     max_tokens?: number
     temperature?: number
   }): Promise<string> {
-    console.group('%c[API Request] POST /api/stream/init', 'color: #2196F3; font-weight: bold')
-    console.log('Params:', params)
-    console.groupEnd()
-
     try {
       const response = await api.post('/stream/init', params)
       const streamId = response.data.data.stream_id
-
-      console.group('%c[API Response] POST /api/stream/init', 'color: #4CAF50; font-weight: bold')
-      console.log('Stream ID:', streamId)
-      console.groupEnd()
-
       return streamId
     } catch (error) {
       console.error('[Init Stream Error]', error)
       throw error
-    }
-  },
-
-  /** @deprecated 使用 initStream + createEventSource 替代 */
-  async *streamApi(params: {
-    api_name: string
-    model: string
-    prompt: string
-    max_tokens?: number
-    temperature?: number
-  }): AsyncGenerator<any, void, unknown> {
-    const response = await fetchWithLogger('/api/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(params)
-    })
-
-    if (!response.ok) {
-      throw new Error(`Stream request failed: ${response.status} ${response.statusText}`)
-    }
-
-    const reader = response.body!.getReader()
-    const decoder = new TextDecoder()
-
-    try {
-      let chunkCount = 0
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          console.log(`%c[Stream Complete] Total chunks: ${chunkCount}`, 'color: #9C27B0; font-weight: bold')
-          break
-        }
-
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            if (data === '[DONE]') {
-              console.log('%c[Stream End] Received [DONE] signal', 'color: #9C27B0; font-weight: bold')
-              return
-            }
-            try {
-              const parsed = JSON.parse(data)
-              chunkCount++
-              console.log(`%c[Stream Chunk #${chunkCount}]`, 'color: #FF9800', parsed)
-              yield parsed
-            } catch (e) {
-              console.warn('[Stream Parse Error]', e, 'Raw:', data)
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock()
     }
   },
 
@@ -250,23 +127,13 @@ export function createEventSource(
   callbacks: EventSourceCallbacks
 ): EventSource {
   const url = `${baseURL}/stream/${streamId}`
-
-  console.group('%c[EventSource] Connecting', 'color: #9C27B0; font-weight: bold')
-  console.log('URL:', url)
-  console.groupEnd()
-
   const eventSource = new EventSource(url)
-
-  eventSource.onopen = () => {
-    console.log('%c[EventSource] Connection opened', 'color: #9C27B0; font-weight: bold')
-  }
 
   eventSource.onmessage = (event) => {
     const rawData = event.data
 
     // 检测完成信号
     if (rawData === '[DONE]') {
-      console.log('%c[EventSource] Received [DONE] signal', 'color: #9C27B0; font-weight: bold')
       eventSource.close()
       callbacks.onComplete()
       return
@@ -274,7 +141,6 @@ export function createEventSource(
 
     try {
       const chunk = JSON.parse(rawData)
-      console.log('%c[EventSource] Message received', 'color: #FF9800', chunk)
       callbacks.onMessage(chunk)
     } catch (e) {
       console.error('[EventSource] 解析 SSE 数据失败:', e, 'Raw:', rawData)

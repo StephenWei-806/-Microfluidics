@@ -144,27 +144,4 @@ def validate_api_config(api_config: Dict[str, Any], api_name: str) -> bool:
     return True
 
 
-def parse_stream_chunk(chunk: bytes, api_type: str = 'openai') -> Optional[Dict[str, Any]]:
-    """解析流式响应 chunk
-    
-    Args:
-        chunk: 响应chunk字节
-        api_type: API类型
-        
-    Returns:
-        解析后的chunk数据，如果是结束标记则返回None
-    """
-    if chunk:
-        chunk_str = chunk.decode('utf-8')
-        if chunk_str.startswith('data: '):
-            chunk_str = chunk_str[6:]
-        
-        if chunk_str == '[DONE]':
-            return None
-        
-        try:
-            data = json.loads(chunk_str)
-            return data
-        except json.JSONDecodeError:
-            return None
-    return None
+
