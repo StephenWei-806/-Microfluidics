@@ -248,6 +248,7 @@ temp/
 # 上传文件目录 (如果有)
 uploads/
 media/
+data/
 
 # 锁文件 (保留 package-lock.json 和 requirements.txt)
 # yarn.lock
