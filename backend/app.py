@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
-from controllers.main_controller import main_bp
+from controllers.main_controller import main_bp, config_service, chip_layout_service
+from services.chip_layout_service import ChipLayoutService
 import os
 import logging
 

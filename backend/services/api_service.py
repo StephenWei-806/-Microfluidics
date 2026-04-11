@@ -2,6 +2,7 @@ import time
 import logging
 from typing import Dict, Any, Optional, Generator, List
 from services.config_service import ConfigService
+from services.chip_layout_service import ChipLayoutService
 from services.api_client import ApiClientFactory, ChatCompletionRequest, ChatCompletionResponse
 from utils.common_utils import build_messages, extract_content, check_rate_limit, validate_api_config
 
@@ -10,13 +11,13 @@ logger = logging.getLogger(__name__)
 class ApiService:
     """API调用服务"""
     
-    def __init__(self, config_service: ConfigService, prompt_service=None):
+    def __init__(self, config_service: ConfigService, chip_layout_service: ChipLayoutService, prompt_service=None):
         self.config_service = config_service
+        self.chip_layout_service = chip_layout_service
         self.prompt_service = prompt_service
         self.api_config = config_service.get_api_config()
         self.rate_limit_cache: Dict[str, Dict[str, Any]] = {}
         self.clients: Dict[str, Any] = {}  # 缓存API客户端
-        self._custom_chip_layout = None
     
     def get_api_config(self, api_name: str) -> Optional[Dict[str, Any]]:
         apis = self.api_config.get('apis', {})
@@ -94,44 +95,6 @@ class ApiService:
             logger.warning(f"加载提示词模板失败: {e}")
             return None
 
-    def set_custom_chip_layout(self, grid: List[List[int]]):
-        """设置自定义芯片网格布局"""
-        self._custom_chip_layout = grid
-        logger.info("自定义芯片网格布局已更新")
-
-    def get_current_chip_layout(self) -> Dict[str, Any]:
-        """获取当前生效的芯片网格配置"""
-        if self._custom_chip_layout is not None:
-            return {
-                'grid': self._custom_chip_layout,
-                'description': '用户自定义芯片网格布局'
-            }
-        # 从 YAML 加载默认值
-        prompt_config = self._load_prompt_template('v1')
-        if prompt_config and 'chip_layout' in prompt_config:
-            return prompt_config['chip_layout']
-        return {
-            'grid': [],
-            'description': '默认芯片网格布局'
-        }
-
-    def _format_chip_layout(self, chip_layout: Dict[str, Any]) -> str:
-        """格式化芯片布局数据为可读字符串"""
-        try:
-            chip_layout = chip_layout or {}
-            grid = chip_layout.get('grid', [])
-            description = chip_layout.get('description', '')
-            lines = []
-            if description:
-                lines.append(description)
-            lines.append('网格布局:')
-            for row in grid:
-                lines.append(str(row))
-            return '\n'.join(lines)
-        except Exception as e:
-            logger.warning(f"格式化芯片布局失败: {e}，忽略芯片布局信息")
-            return ''
-
     def _merge_prompt_with_template(self, user_input: str, prompt_config: Dict[str, Any]) -> str:
         """将用户输入与提示词模板合并"""
         template = prompt_config.get('prompt_template', '')
@@ -139,13 +102,7 @@ class ApiService:
             logger.warning("提示词模板为空，使用原始用户输入")
             return user_input
 
-        chip_layout = prompt_config.get('chip_layout', {})
-        # 如果存在自定义芯片布局，则替换
-        if self._custom_chip_layout is not None:
-            chip_layout = dict(chip_layout)  # 复制一份避免修改原配置
-            chip_layout['grid'] = self._custom_chip_layout
-            chip_layout['description'] = '用户自定义芯片网格布局'
-        chip_layout_str = self._format_chip_layout(chip_layout)
+        chip_layout_str = self.chip_layout_service.format_for_prompt()
 
         try:
             merged = template.format(

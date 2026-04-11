@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, Response
 from services.config_service import ConfigService
 from services.prompt_service import PromptService
 from services.api_service import ApiService
+from services.chip_layout_service import ChipLayoutService
 import os
 import json
 import uuid
@@ -28,7 +29,8 @@ def _cleanup_expired_streams():
 config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
 config_service = ConfigService(config_dir)
 prompt_service = PromptService(config_service)
-api_service = ApiService(config_service, prompt_service)
+chip_layout_service = ChipLayoutService(config_service, persist_dir='./data')
+api_service = ApiService(config_service, chip_layout_service, prompt_service)
 
 def error_handler(func):
     def wrapper(*args, **kwargs):
@@ -408,7 +410,7 @@ def stream_api():
 @error_handler
 def get_chip_layout():
     """获取当前生效的芯片网格配置"""
-    layout = api_service.get_current_chip_layout()
+    layout = chip_layout_service.get_current_layout()
     return jsonify({
         'code': 200,
         'message': 'ok',
@@ -423,41 +425,44 @@ def update_chip_layout():
     data = request.get_json()
     grid = data.get('grid')
     
-    if grid is None:
+    # 使用 ChipLayoutService 验证网格
+    is_valid, errors = chip_layout_service.validate_grid(grid)
+    if not is_valid:
         return jsonify({
             'code': 400,
-            'message': '缺少 grid 参数',
-            'data': None
+            'message': '网格验证失败',
+            'data': {'errors': errors}
         }), 400
     
-    # 校验格式
-    if not isinstance(grid, list) or len(grid) != 17:
-        return jsonify({
-            'code': 400,
-            'message': '网格必须为17行',
-            'data': None
-        }), 400
-    
-    for i, row in enumerate(grid):
-        if not isinstance(row, list) or len(row) != 22:
-            return jsonify({
-                'code': 400,
-                'message': f'第{i+1}行必须为22列',
-                'data': None
-            }), 400
-        for j, val in enumerate(row):
-            if not isinstance(val, int) or val < 0 or val > 128:
-                return jsonify({
-                    'code': 400,
-                    'message': f'网格值必须为0-128的整数 (行{i+1}, 列{j+1})',
-                    'data': None
-                }), 400
-    
-    api_service.set_custom_chip_layout(grid)
+    chip_layout_service.set_custom_layout(grid)
     logger.info(f'[ChipLayout] 用户更新了芯片网格配置')
     
     return jsonify({
         'code': 200,
         'message': '芯片网格配置更新成功',
         'data': None
+    })
+
+
+@main_bp.route('/chip-layout/reset', methods=['POST'])
+@error_handler
+def reset_chip_layout():
+    """重置芯片网格配置为默认值"""
+    layout = chip_layout_service.reset_to_default()
+    return jsonify({
+        'code': 200,
+        'message': '芯片网格配置已重置为默认值',
+        'data': layout
+    })
+
+
+@main_bp.route('/chip-layout/statistics', methods=['GET'])
+@error_handler
+def get_chip_layout_statistics():
+    """获取芯片网格配置统计信息"""
+    stats = chip_layout_service.get_statistics()
+    return jsonify({
+        'code': 200,
+        'message': 'ok',
+        'data': stats
     })

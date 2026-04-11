@@ -223,6 +223,16 @@ export const apiClient = {
   async updateChipLayout(grid: number[][]): Promise<ApiResponse<any>> {
     const response = await api.post('/chip-layout', { grid })
     return response.data
+  },
+
+  async resetChipLayout(): Promise<ApiResponse<any>> {
+    const response = await api.post('/chip-layout/reset')
+    return response.data
+  },
+
+  async getChipLayoutStatistics(): Promise<ApiResponse<any>> {
+    const response = await api.get('/chip-layout/statistics')
+    return response.data
   }
 }
 
