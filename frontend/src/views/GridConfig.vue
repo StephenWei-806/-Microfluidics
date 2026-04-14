@@ -61,8 +61,10 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiClient } from '@/api'
+import { useChipLayoutStore } from '@/stores/chipLayout'
 
 const router = useRouter()
+const chipLayoutStore = useChipLayoutStore()
 const ROWS = 17
 const COLS = 22
 const submitting = ref(false)
@@ -156,6 +158,8 @@ async function resetToDefault() {
     }
     errorCells.value.clear()
     ElMessage.success('已重置为默认配置！')
+    await chipLayoutStore.fetchLayout(true)
+    chipLayoutStore.notifyLayoutUpdated()
     await loadStatistics()
   } catch (error) {
     console.error('Failed to reset chip layout:', error)
@@ -183,6 +187,8 @@ async function submitConfig() {
     const gridData = grid.map(row => [...row])
     await apiClient.updateChipLayout(gridData)
     ElMessage.success('配置提交成功！')
+    await chipLayoutStore.fetchLayout(true)
+    chipLayoutStore.notifyLayoutUpdated()
     await loadStatistics()
   } catch (error: any) {
     console.error('Failed to update chip layout:', error)

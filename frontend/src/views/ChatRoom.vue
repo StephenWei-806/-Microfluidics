@@ -31,9 +31,9 @@
           <el-icon><Setting /></el-icon>
           API 配置
         </el-button>
-        <el-button @click="goToGridConfig" link>
-          <el-icon><Grid /></el-icon>
-          网格配置
+        <el-button @click="chipLayoutStore.togglePanel()" link>
+          <el-icon><View /></el-icon>
+          {{ chipLayoutStore.floatingPanel.visible ? '隐藏预览' : '显示预览' }}
         </el-button>
       </div>
     </div>
@@ -73,6 +73,7 @@
 
       <ChatInput :isLoading="chatStore.isLoading" @send="handleSendMessage" />
     </div>
+    <ChipPreviewPanel />
   </div>
 </template>
 
@@ -86,16 +87,19 @@ import {
   Setting,
   VideoPause,
   ChatDotRound,
-  Grid
+  View
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useApiConfigStore } from '@/stores/apiConfig'
+import { useChipLayoutStore } from '@/stores/chipLayout'
 import MessageBubble from '@/components/MessageBubble.vue'
 import ChatInput from '@/components/ChatInput.vue'
+import ChipPreviewPanel from '@/components/ChipPreviewPanel.vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
 const apiConfigStore = useApiConfigStore()
+const chipLayoutStore = useChipLayoutStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 
 async function handleSendMessage(content: string) {

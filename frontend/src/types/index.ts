@@ -34,3 +34,25 @@ export interface ApiResponse<T = any> {
   message: string
   data: T
 }
+
+export interface ChipGrid {
+  grid: number[][]
+  description: string
+}
+
+export interface ChipStatistics {
+  total_cells: number
+  reachable_cells: number
+  forbidden_cells: number
+  rows: number
+  cols: number
+  is_custom: boolean
+  description: string
+}
+
+export interface FloatingPanelState {
+  visible: boolean
+  minimized: boolean
+  position: { x: number; y: number }
+  opacity: number
+}
