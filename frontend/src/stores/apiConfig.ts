@@ -57,8 +57,8 @@ export const useApiConfigStore = defineStore('apiConfig', () => {
         config.value.apiKeys[config.value.currentApi]
       )
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config.value))
-    } catch (error) {
-      console.error('Failed to save config:', error)
+    } catch {
+      // 静默处理配置保存失败
     }
   }
 
@@ -69,7 +69,7 @@ export const useApiConfigStore = defineStore('apiConfig', () => {
         const parsed = JSON.parse(saved)
         config.value = { ...config.value, ...parsed }
       } catch {
-        console.error('Failed to parse saved config')
+        // 静默处理本地配置解析失败
       }
     }
   }

@@ -95,8 +95,11 @@ class ApiService:
         """
         return build_messages(prompt, system_prompt)
     
-    def call_api(self, api_name: str, model: str, prompt: str, **kwargs) -> Dict[str, Any]:
-        """同步调用API进行聊天完成
+    def _build_request_params(self, api_name: str, model: str, prompt: str, **kwargs):
+        """构建API请求参数
+        
+        统一构建同步和流式API调用所需的请求参数，
+        包括速率限制检查、消息构建和请求对象创建。
         
         Args:
             api_name: API名称
@@ -105,7 +108,7 @@ class ApiService:
             **kwargs: 可选参数（system_prompt, max_tokens, temperature等）
             
         Returns:
-            Dict[str, Any]: API响应字典
+            tuple: (client, request) 客户端实例和请求对象
         """
         self._check_rate_limit(api_name)
         
@@ -142,6 +145,21 @@ class ApiService:
         )
         
         client = self._get_api_client(api_name)
+        return client, request
+    
+    def call_api(self, api_name: str, model: str, prompt: str, **kwargs) -> Dict[str, Any]:
+        """同步调用API进行聊天完成
+        
+        Args:
+            api_name: API名称
+            model: 模型名称
+            prompt: 用户提示词
+            **kwargs: 可选参数（system_prompt, max_tokens, temperature等）
+            
+        Returns:
+            Dict[str, Any]: API响应字典
+        """
+        client, request = self._build_request_params(api_name, model, prompt, **kwargs)
         response = client.chat_completions(request)
         
         return response.to_dict()
@@ -209,8 +227,6 @@ class ApiService:
         Yields:
             Dict[str, Any]: 流式响应数据块
         """
-        self._check_rate_limit(api_name)
-
         # 加载提示词模板并与用户输入合并
         prompt_config = self._load_prompt_template('v1')
         if prompt_config:
@@ -219,39 +235,7 @@ class ApiService:
         else:
             logger.info("未能加载提示词模板，直接使用用户原始输入")
         
-        api_config = self.get_api_config(api_name)
-        
-        system_prompt = kwargs.get('system_prompt')
-        max_tokens = kwargs.get('max_tokens', 1024)
-        temperature = kwargs.get('temperature', 0.7)
-        top_p = kwargs.get('top_p', 1.0)
-        frequency_penalty = kwargs.get('frequency_penalty', 0.0)
-        presence_penalty = kwargs.get('presence_penalty', 0.0)
-        n = kwargs.get('n', 1)
-        stop = kwargs.get('stop')
-        logprobs = kwargs.get('logprobs')
-        echo = kwargs.get('echo', False)
-        user = kwargs.get('user')
-        
-        messages = self._build_messages(prompt, system_prompt)
-        
-        request = ChatCompletionRequest(
-            model=model or api_config.get('default_model', ''),
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=True,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
-            n=n,
-            stop=stop,
-            logprobs=logprobs,
-            echo=echo,
-            user=user
-        )
-        
-        client = self._get_api_client(api_name)
+        client, request = self._build_request_params(api_name, model, prompt, **kwargs)
         for chunk in client.stream_chat_completions(request):
             yield chunk
     

@@ -28,8 +28,8 @@ export const useChipLayoutStore = defineStore('chipLayout', () => {
         fetchLayout(true)
       }
     }
-  } catch (e) {
-    console.warn('BroadcastChannel not supported')
+  } catch {
+    // 静默处理 BroadcastChannel 不支持的情况
   }
 
   async function fetchLayout(force = false) {
@@ -44,8 +44,8 @@ export const useChipLayoutStore = defineStore('chipLayout', () => {
       }
       lastFetchTime.value = Date.now()
       await fetchStatistics()
-    } catch (e) {
-      console.error('Failed to fetch chip layout:', e)
+    } catch {
+      // 静默处理网格数据获取失败
     } finally {
       isLoading.value = false
     }
@@ -57,8 +57,8 @@ export const useChipLayoutStore = defineStore('chipLayout', () => {
       if (response.data) {
         statistics.value = response.data
       }
-    } catch (e) {
-      console.error('Failed to fetch statistics:', e)
+    } catch {
+      // 静默处理统计信息获取失败
     }
   }
 
@@ -105,7 +105,7 @@ export const useChipLayoutStore = defineStore('chipLayout', () => {
         floatingPanel.position = state.position ?? { x: -1, y: -1 }
         floatingPanel.opacity = state.opacity ?? 0.95
       } catch {
-        console.warn('Failed to parse panel state')
+        // 静默处理面板状态解析失败
       }
     }
   }

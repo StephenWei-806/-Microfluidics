@@ -35,7 +35,7 @@ export const useChatStore = defineStore('chat', () => {
           currentConversationId.value = conversations.value[0].id
         }
       } catch {
-        console.error('Failed to parse saved conversations')
+        // 静默处理本地对话数据解析失败
       }
     }
   }

@@ -17,7 +17,7 @@ api.interceptors.response.use(
   },
   (error: AxiosError) => {
     if (!error.response && !error.request) {
-      console.error('[API Error]', error.message)
+      // 静默处理无响应的网络错误
     }
     return Promise.reject(error)
   }
@@ -74,9 +74,8 @@ export const apiClient = {
       const response = await api.post('/stream/init', params)
       const streamId = response.data.data.stream_id
       return streamId
-    } catch (error) {
-      console.error('[Init Stream Error]', error)
-      throw error
+    } catch {
+      throw new Error('初始化流式请求失败')
     }
   },
 
@@ -142,13 +141,12 @@ export function createEventSource(
     try {
       const chunk = JSON.parse(rawData)
       callbacks.onMessage(chunk)
-    } catch (e) {
-      console.error('[EventSource] 解析 SSE 数据失败:', e, 'Raw:', rawData)
+    } catch {
+      // 静默处理 SSE 数据解析失败
     }
   }
 
-  eventSource.onerror = (event) => {
-    console.error('[EventSource] Connection error', event)
+  eventSource.onerror = () => {
     eventSource.close()
     callbacks.onError('SSE 连接发生错误，请稍后重试')
   }

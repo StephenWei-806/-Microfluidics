@@ -116,8 +116,8 @@ async function loadModels() {
   try {
     const response = await apiClient.getModels(form.currentApi)
     availableModels.value = response.data.models
-  } catch (error) {
-    console.error('Failed to load models:', error)
+  } catch {
+    // 静默处理模型列表加载失败
   }
 }
 

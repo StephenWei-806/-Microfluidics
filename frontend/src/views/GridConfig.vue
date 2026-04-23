@@ -126,8 +126,7 @@ async function loadCurrentConfig() {
     } else {
       ElMessage.warning('返回数据格式不正确')
     }
-  } catch (error) {
-    console.error('Failed to load chip layout:', error)
+  } catch {
     ElMessage.error('加载配置失败')
   }
 }
@@ -161,8 +160,7 @@ async function resetToDefault() {
     await chipLayoutStore.fetchLayout(true)
     chipLayoutStore.notifyLayoutUpdated()
     await loadStatistics()
-  } catch (error) {
-    console.error('Failed to reset chip layout:', error)
+  } catch {
     ElMessage.error('重置配置失败')
   } finally {
     resetting.value = false
@@ -175,8 +173,8 @@ async function loadStatistics() {
     if (response.data) {
       statistics.value = response.data
     }
-  } catch (error) {
-    console.error('Failed to load statistics:', error)
+  } catch {
+    // 静默处理统计信息加载失败
   }
 }
 
@@ -191,7 +189,6 @@ async function submitConfig() {
     chipLayoutStore.notifyLayoutUpdated()
     await loadStatistics()
   } catch (error: any) {
-    console.error('Failed to update chip layout:', error)
     // 解析后端返回的详细错误信息
     const apiData = error.response?.data
     const fieldErrors = apiData?.data?.errors ?? apiData?.errors

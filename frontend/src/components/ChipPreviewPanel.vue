@@ -150,9 +150,8 @@ function goToGridConfig() {
   router.push('/grid-config')
 }
 
-function onCellClick(row: number, col: number, value: number) {
+function onCellClick(_row: number, _col: number, _value: number) {
   // 预留交互接口：未来可在这里添加单元格操作逻辑
-  console.log(`Cell clicked: row=${row}, col=${col}, value=${value}`)
 }
 
 // 轮询定时器

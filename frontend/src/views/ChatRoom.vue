@@ -135,10 +135,6 @@ function goToConfig() {
   router.push('/config')
 }
 
-function goToGridConfig() {
-  router.push('/grid-config')
-}
-
 function scrollToBottom() {
   nextTick(() => {
     if (messagesContainer.value) {

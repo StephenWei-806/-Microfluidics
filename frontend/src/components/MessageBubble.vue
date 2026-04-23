@@ -85,103 +85,12 @@ import { watch, nextTick, ref, onUnmounted, onMounted } from 'vue'
 import { ChatDotRound, DocumentCopy, Close, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Message } from '@/types'
-import { marked } from 'marked'
-import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import mermaid from 'mermaid'
 
-// 初始化 mermaid
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  flowchart: {
-    htmlLabels: true,
-    useMaxWidth: true,
-  },
-})
-
-// 内容段类型定义
-interface ContentSegment {
-  type: 'text' | 'mermaid'
-  content: string        // 原始内容
-  rendered?: string      // 渲染后的 HTML/SVG
-  id?: string           // mermaid 块的唯一 ID
-  renderError?: boolean  // 渲染是否失败
-}
-
-// mermaid 代码块计数器，用于生成唯一 ID
-let mermaidCounter = 0
-
-// 流式更新互斥锁，防止并发渲染问题
-let streamingUpdateLock = false
-let pendingStreamingUpdate = false
-
-// 流式更新防抖定时器
-let streamingDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
-// HTML特殊字符转义
-function escapeHtml(text: string): string {
-  const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  }
-  return text.replace(/[&<>"']/g, char => map[char])
-}
-
-// 预处理 mermaid 代码，统一为节点标签添加引号以兼容 v11 严格语法
-function sanitizeMermaidCode(code: string): string {
-  let sanitized = code
-
-  // 处理 ((...)) 双圆括号（圆形节点）
-  sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\(\(([^)]*)\)\)/g,
-    (_match, id, label) => {
-      const trimmed = label.trim()
-      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
-      return `${id}(("${label.replace(/"/g, '#quot;')}"))`
-    }
-  )
-
-  // 处理 (...) 单圆括号（圆角节点）— 排除已处理的双圆括号
-  sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\(([^("][^)]*)\)/g,
-    (_match, id, label) => {
-      const trimmed = label.trim()
-      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
-      // 跳过纯英文字母数字标签（mermaid 原生支持）
-      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
-      return `${id}("${label.replace(/"/g, '#quot;')}")`
-    }
-  )
-
-  // 处理 [...] 方括号（矩形节点）
-  sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\[([^\]]*)\]/g,
-    (_match, id, label) => {
-      const trimmed = label.trim()
-      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
-      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
-      return `${id}["${label.replace(/"/g, '#quot;')}"]`
-    }
-  )
-
-  // 处理 {...} 菱形节点（决策框）
-  sanitized = sanitized.replace(
-    /([a-zA-Z_]\w*)\{([^}]*)\}/g,
-    (_match, id, label) => {
-      const trimmed = label.trim()
-      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return _match
-      if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return _match
-      return `${id}{"${label.replace(/"/g, '#quot;')}"}`
-    }
-  )
-
-  return sanitized
-}
+import { parseContent, escapeHtml, hashContent } from './message/ContentParser'
+import { renderAllMermaidSegments, addMermaidEventListeners } from './message/MermaidRenderer'
+import { copyChart as copyChartImpl, downloadChart as downloadChartImpl } from './message/SvgExporter'
+import type { ContentSegment } from './message/types'
 
 // 消息内容容器的 ref
 const messageContentRef = ref<HTMLElement>()
@@ -216,177 +125,12 @@ const finalSegments = ref<ContentSegment[]>([])
 // 已渲染的 mermaid 块 content hash 集合，避免重复渲染
 const renderedMermaidHashes = ref<Set<string>>(new Set())
 
-// 计算内容的简单 hash，用于去重
-function hashContent(content: string): string {
-  // 对 content 做 trim 后再计算 hash，避免流式传输中末尾空白变化导致 hash 不同
-  const trimmed = content.trim()
-  let hash = 0
-  for (let i = 0; i < trimmed.length; i++) {
-    const char = trimmed.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
-  }
-  return hash.toString(36)
-}
+// 流式更新互斥锁，防止并发渲染问题
+let streamingUpdateLock = false
+let pendingStreamingUpdate = false
 
-// 解析内容，拆分为 text 和 mermaid 段落
-function parseContent(content: string): { 
-  segments: ContentSegment[] 
-  hasUnclosedMermaid: boolean 
-  trailingText: string 
-} {
-  const segments: ContentSegment[] = []
-  // 闭合的 mermaid 代码块（更宽松的正则，兼容空格和大小写变体）
-  const mermaidRegex = /```\s*mermaid[ \t]*\r?\n([\s\S]*?)```/gi
-  let lastIndex = 0
-  let match
-
-  while ((match = mermaidRegex.exec(content)) !== null) {
-    // 添加 mermaid 之前的文本
-    if (match.index > lastIndex) {
-      const textContent = content.slice(lastIndex, match.index)
-      if (textContent.trim()) {
-        segments.push({
-          type: 'text',
-          content: textContent,
-          rendered: marked(textContent) as string
-        })
-      }
-    }
-    
-    // 添加 mermaid 代码块
-    const mermaidCode = match[1].trim()
-    if (mermaidCode) {
-      segments.push({
-        type: 'mermaid',
-        content: mermaidCode,
-        rendered: undefined,    // 初始化 rendered 属性，确保 Vue 响应式追踪
-        renderError: false
-      })
-    }
-    
-    lastIndex = match.index + match[0].length
-  }
-
-  // 检查末尾是否有未闭合的 mermaid 块
-  const remainingText = content.slice(lastIndex)
-  // 未闭合的 mermaid 代码块（更宽松的正则）
-  const unclosedMermaidMatch = remainingText.match(/```\s*mermaid[ \t]*\r?\n?([\s\S]*)$/i)
-  
-  if (unclosedMermaidMatch) {
-    // 有未闭合的 mermaid，前面的文本先处理
-    const beforeMermaid = remainingText.slice(0, unclosedMermaidMatch.index)
-    if (beforeMermaid.trim()) {
-      segments.push({
-        type: 'text',
-        content: beforeMermaid,
-        rendered: marked(beforeMermaid) as string
-      })
-    }
-    return {
-      segments,
-      hasUnclosedMermaid: true,
-      trailingText: remainingText.slice(unclosedMermaidMatch.index)
-    }
-  }
-
-  // 没有未闭合的 mermaid，剩余部分作为普通文本
-  if (remainingText.trim()) {
-    segments.push({
-      type: 'text',
-      content: remainingText,
-      rendered: marked(remainingText) as string
-    })
-  }
-
-  return {
-    segments,
-    hasUnclosedMermaid: false,
-    trailingText: ''
-  }
-}
-
-// 带超时的 mermaid 渲染辅助函数
-const renderWithTimeout = (renderId: string, code: string, timeoutMs = 10000): Promise<{ svg: string }> => {
-  return Promise.race([
-    mermaid.render(renderId, code),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Mermaid 渲染超时 (${timeoutMs}ms)`)), timeoutMs)
-    )
-  ])
-}
-
-// 渲染单个 mermaid 段落
-async function renderMermaidSegment(segment: ContentSegment): Promise<void> {
-  if (segment.type !== 'mermaid' || segment.rendered) return
-
-  const contentHash = hashContent(segment.content)
-  if (renderedMermaidHashes.value.has(contentHash)) return
-
-  // 提前注册 hash，防止并发重复渲染
-  renderedMermaidHashes.value.add(contentHash)
-
-  const id = `mermaid-${Date.now()}-${mermaidCounter++}`
-  segment.id = id
-
-  // 预处理 mermaid 代码
-  const sanitizedCode = sanitizeMermaidCode(segment.content)
-  const codeChanged = sanitizedCode !== segment.content
-
-  try {
-    const { svg } = await renderWithTimeout(id, sanitizedCode)
-    segment.rendered = svg
-    segment.renderError = false  // 确保显式设置成功状态
-  } catch (err) {
-    console.error('[Mermaid] 净化代码渲染失败:', { error: err, id, codeChanged, contentLength: segment.content.length })
-
-    // 清理 mermaid 可能留下的临时 DOM 元素
-    const errorElement = document.getElementById(id)
-    if (errorElement) {
-      errorElement.remove()
-    }
-
-    // 如果净化后仍然失败，尝试用原始代码（以防净化反而破坏了正确语法）
-    if (codeChanged) {
-      const retryId = `mermaid-${Date.now()}-${mermaidCounter++}`
-      segment.id = retryId
-      try {
-        const { svg } = await renderWithTimeout(retryId, segment.content)
-        segment.rendered = svg
-        segment.renderError = false  // 确保显式设置成功状态
-        return
-      } catch (retryErr) {
-        console.error('[Mermaid] 原始代码重试渲染失败:', { error: retryErr, retryId })
-        // 清理重试时可能留下的临时 DOM 元素
-        const retryErrorElement = document.getElementById(retryId)
-        if (retryErrorElement) {
-          retryErrorElement.remove()
-        }
-      }
-    }
-
-    segment.renderError = true
-    // 降级为高亮源码，优先使用净化后的代码
-    const codeToDisplay = codeChanged ? sanitizedCode : segment.content
-    try {
-      const highlighted = hljs.highlight(codeToDisplay, { language: 'plaintext' }).value
-      segment.rendered = highlighted
-    } catch (hlErr) {
-      // 高亮处理也失败，使用纯HTML转义保底
-      console.error('[Mermaid] 高亮处理失败，使用纯文本:', hlErr)
-      segment.rendered = escapeHtml(codeToDisplay)
-    }
-    // 注意：降级显示也是有效结果，不移除 hash，避免无限重试
-  }
-}
-
-// 渲染所有未渲染的 mermaid 段落（顺序执行，避免并发问题）
-async function renderAllMermaidSegments(segments: ContentSegment[]): Promise<void> {
-  const mermaidSegments = segments.filter(s => s.type === 'mermaid' && !s.rendered)
-  for (const seg of mermaidSegments) {
-    await renderMermaidSegment(seg)
-  }
-}
+// 流式更新防抖定时器
+let streamingDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // 关闭模态框
 function closeModal() {
@@ -411,193 +155,6 @@ function showContextMenuAt(event: MouseEvent, svgElement: HTMLElement) {
 // 关闭右键菜单
 function closeContextMenu() {
   showContextMenu.value = false
-}
-
-// 将SVG转换为Canvas
-async function svgToCanvas(svgElement: HTMLElement): Promise<HTMLCanvasElement> {
-  // 克隆 SVG 以避免修改原始 DOM
-  const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement
-
-  // 确保有 xmlns 属性
-  if (!clonedSvg.getAttribute('xmlns')) {
-    clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  }
-  // 确保 xlink namespace
-  if (!clonedSvg.getAttribute('xmlns:xlink')) {
-    clonedSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
-  }
-
-  // 获取实际尺寸
-  const svgRect = svgElement.getBoundingClientRect()
-  const width = svgRect.width || parseInt(clonedSvg.getAttribute('width') || '800')
-  const height = svgRect.height || parseInt(clonedSvg.getAttribute('height') || '600')
-
-  // 设置显式宽高
-  clonedSvg.setAttribute('width', String(width))
-  clonedSvg.setAttribute('height', String(height))
-
-  // 收集并内联计算样式（将所有相关 CSS 嵌入 SVG）
-  const styleElement = document.createElement('style')
-  const cssRules: string[] = []
-  for (const sheet of document.styleSheets) {
-    try {
-      for (const rule of sheet.cssRules) {
-        cssRules.push(rule.cssText)
-      }
-    } catch {
-      // 跨域样式表会抛出错误，忽略即可
-    }
-  }
-  styleElement.textContent = cssRules.join('\n')
-  clonedSvg.insertBefore(styleElement, clonedSvg.firstChild)
-
-  // 使用 data URL 方式，比 Blob URL 更可靠
-  const svgData = new XMLSerializer().serializeToString(clonedSvg)
-  const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData)
-
-  // 计算满足最小分辨率要求的缩放因子
-  const MIN_LONG_SIDE = 1920
-  const MIN_SHORT_SIDE = 720
-
-  let targetWidth: number
-  let targetHeight: number
-
-  if (width >= height) {
-    // 横向图表
-    targetWidth = Math.max(MIN_LONG_SIDE, width)
-    targetHeight = targetWidth * (height / width)
-    if (targetHeight < MIN_SHORT_SIDE) {
-      targetHeight = MIN_SHORT_SIDE
-      targetWidth = targetHeight * (width / height)
-    }
-  } else {
-    // 纵向图表
-    targetHeight = Math.max(MIN_LONG_SIDE, height)
-    targetWidth = targetHeight * (width / height)
-    if (targetWidth < MIN_SHORT_SIDE) {
-      targetWidth = MIN_SHORT_SIDE
-      targetHeight = targetWidth * (height / width)
-    }
-  }
-
-  const scale = Math.max(2, targetWidth / width, targetHeight / height)
-
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.round(width * scale)
-      canvas.height = Math.round(height * scale)
-
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('无法获取 canvas 上下文'))
-        return
-      }
-
-      // 填充白色背景
-      ctx.fillStyle = 'white'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      resolve(canvas)
-    }
-    img.onerror = (e) => {
-      console.error('SVG 图片加载失败:', e)
-      reject(new Error('SVG 图片加载失败'))
-    }
-    img.src = svgDataUrl
-  })
-}
-
-// 复制图表到剪贴板
-async function copyChart() {
-  if (!currentSvgElement.value) return
-
-  try {
-    const canvas = await svgToCanvas(currentSvgElement.value)
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => {
-        if (b) {
-          resolve(b)
-        } else {
-          reject(new Error('Canvas toBlob 返回空'))
-        }
-      }, 'image/png')
-    })
-
-    // 检查是否支持 ClipboardItem API
-    if (typeof ClipboardItem !== 'undefined') {
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': blob })
-      ])
-      ElMessage.success('图表已复制到剪贴板')
-    } else {
-      ElMessage.warning('当前浏览器不支持复制图片，请使用下载功能')
-    }
-  } catch (err) {
-    console.error('复制图表失败:', err)
-    ElMessage.error('复制失败，请使用下载功能')
-  } finally {
-    closeContextMenu()
-  }
-}
-
-// 下载图表为PNG
-async function downloadChart() {
-  if (!currentSvgElement.value) return
-
-  try {
-    const canvas = await svgToCanvas(currentSvgElement.value)
-    const dataUrl = canvas.toDataURL('image/png')
-
-    const link = document.createElement('a')
-    link.href = dataUrl
-    link.download = 'mermaid-chart.png'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    ElMessage.success('图表已下载')
-  } catch (err) {
-    console.error('下载图表失败:', err)
-    ElMessage.error('下载失败')
-  } finally {
-    closeContextMenu()
-  }
-}
-
-// 为mermaid容器添加事件监听（限定在当前组件范围内）
-function addMermaidEventListeners() {
-  // 先清理旧的事件监听器（只清理 mermaid container 相关的监听器，不触碰 document click）
-  cleanupFunctions.forEach(fn => fn())
-  cleanupFunctions.length = 0
-
-  // 限定在当前消息内容容器内查找
-  const containers = messageContentRef.value?.querySelectorAll<HTMLElement>('.mermaid-container') ?? []
-  containers.forEach((container) => {
-    const svg = container.querySelector('svg')
-    if (!svg) return
-
-    // 添加点击事件
-    const handleClick = () => {
-      openModal(svg.outerHTML)
-    }
-    container.addEventListener('click', handleClick)
-    container.style.cursor = 'pointer'
-
-    // 添加右键事件
-    const handleContextMenu = (e: MouseEvent) => {
-      showContextMenuAt(e, svg as unknown as HTMLElement)
-    }
-    container.addEventListener('contextmenu', handleContextMenu)
-
-    // 存储清理函数
-    cleanupFunctions.push(() => {
-      container.removeEventListener('click', handleClick)
-      container.removeEventListener('contextmenu', handleContextMenu)
-      container.style.cursor = ''
-    })
-  })
 }
 
 // 监听文档点击以关闭右键菜单
@@ -647,7 +204,7 @@ async function updateStreamingContent() {
 
     // 渲染新出现的 mermaid 段落
     await nextTick()
-    await renderAllMermaidSegments(streamSegments.value)
+    await renderAllMermaidSegments(streamSegments.value, renderedMermaidHashes.value)
     // 强制触发 Vue 响应式更新（渲染会修改 segment 内部属性，Vue 无法自动检测）
     streamSegments.value = [...streamSegments.value]
   } finally {
@@ -665,10 +222,17 @@ async function updateStreamingContent() {
 async function updateFinalContent() {
   const { segments } = parseContent(props.message.content)
   
-  // 保留已渲染的 mermaid 段落的渲染结果
+  // 保留已渲染的 mermaid 段落的渲染结果（同时从流式段落和最终段落中继承）
   const existingRendered = new Map<string, ContentSegment>()
+  // 优先从流式阶段的段落中继承渲染结果（流式→最终的过渡场景）
+  streamSegments.value.forEach(seg => {
+    if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
+      existingRendered.set(hashContent(seg.content), seg)
+    }
+  })
+  // 再从已有的最终段落中查找（页面刷新后重新渲染的场景）
   finalSegments.value.forEach(seg => {
-    if (seg.type === 'mermaid' && seg.rendered) {
+    if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
       existingRendered.set(hashContent(seg.content), seg)
     }
   })
@@ -687,13 +251,20 @@ async function updateFinalContent() {
   
   // 渲染所有 mermaid 段落
   await nextTick()
-  await renderAllMermaidSegments(finalSegments.value)
+  await renderAllMermaidSegments(finalSegments.value, renderedMermaidHashes.value)
   // 强制触发 Vue 响应式更新
   finalSegments.value = [...finalSegments.value]
 
   // 添加事件监听
   await nextTick()
-  addMermaidEventListeners()
+  addMermaidEventListeners(
+    messageContentRef.value,
+    {
+      onClick: openModal,
+      onContextMenu: showContextMenuAt
+    },
+    cleanupFunctions
+  )
 }
 
 // 监听内容变化（流式传输中）
@@ -717,9 +288,11 @@ watch(
   async (isStreaming, oldIsStreaming) => {
     if (oldIsStreaming === true && isStreaming === false) {
       // 流式结束，切换到最终渲染模式
+      // 注意：先调用 updateFinalContent，再清空流式段落，
+      // 以便 updateFinalContent 能继承流式阶段已渲染的 mermaid 结果
+      await updateFinalContent()
       streamSegments.value = []
       trailingStreamText.value = ''
-      await updateFinalContent()
     }
   }
 )
@@ -734,6 +307,16 @@ onMounted(async () => {
 function copyMessage() {
   navigator.clipboard.writeText(props.message.content)
   ElMessage.success('已复制到剪贴板')
+}
+
+// 复制图表（包装函数，提供当前 SVG 元素和完成回调）
+async function copyChart() {
+  await copyChartImpl(currentSvgElement.value, closeContextMenu)
+}
+
+// 下载图表（包装函数，提供当前 SVG 元素和完成回调）
+async function downloadChart() {
+  await downloadChartImpl(currentSvgElement.value, closeContextMenu)
 }
 
 // 组件卸载时清理所有事件监听器

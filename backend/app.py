@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from controllers.main_controller import main_bp, config_service, chip_layout_service
+from controllers import register_blueprints
 import os
 import logging
 
@@ -17,7 +17,7 @@ CORS(app, resources={
 })
 
 # 注册蓝图
-app.register_blueprint(main_bp, url_prefix='/api')
+register_blueprints(app)
 
 # 确保日志目录存在
 log_dir = os.path.join(os.path.dirname(__file__), 'logs')
