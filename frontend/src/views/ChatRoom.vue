@@ -2,7 +2,7 @@
   <div class="chat-room-container">
     <div class="sidebar">
       <div class="sidebar-header">
-        <h3>微流控AI助手</h3>
+        <h3>微流控助手</h3>
         <el-button type="primary" @click="createNewChat" size="small">
           <el-icon><Plus /></el-icon>
           新对话
