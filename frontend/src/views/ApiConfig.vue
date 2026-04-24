@@ -137,15 +137,21 @@ watch(() => apiConfigStore.config, (newConfig) => {
 async function loadModels() {
   try {
     const response = await apiClient.getModels(form.currentApi)
-    availableModels.value = response.data.models
-  } catch {
-    // 静默处理模型列表加载失败
+    availableModels.value = response.data.models || []
+  } catch (error) {
+    console.error('加载模型列表失败:', error)
+    availableModels.value = []
   }
 }
 
 async function handleApiTypeChange() {
   apiConfigStore.setApiType(form.currentApi)
   await loadModels()
+  // 切换 API 后，如果当前模型不在新列表中，重置为第一个可用模型
+  if (availableModels.value.length > 0 && !availableModels.value.includes(form.modelConfig.model)) {
+    form.modelConfig.model = availableModels.value[0]
+    apiConfigStore.setModelConfig({ model: form.modelConfig.model })
+  }
 }
 
 async function testConnection() {
@@ -188,6 +194,11 @@ function goToGridConfig() {
 
 onMounted(() => {
   apiConfigStore.loadConfig()
+  // 同步 form 初始值与 store，确保 loadModels 使用正确的 API 类型
+  form.currentApi = apiConfigStore.config.currentApi
+  form.apiKeys = { ...apiConfigStore.config.apiKeys }
+  form.modelConfig = { ...apiConfigStore.config.modelConfig }
+  form.isConfigValid = apiConfigStore.config.isConfigValid
   loadModels()
 })
 </script>

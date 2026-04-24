@@ -105,7 +105,7 @@ class OpenAIClient(BaseApiClient):
         """
         super().__init__(config)
         self.client = OpenAI(
-            api_key=self.api_key,
+            api_key=self.api_key or '',
             base_url=self.base_url
         )
     
