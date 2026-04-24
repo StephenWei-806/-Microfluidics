@@ -15,7 +15,8 @@ class ChatCompletionRequest:
                  n: int = 1, stop: Optional[List[str]] = None,
                  logprobs: Optional[int] = None, echo: bool = False,
                  stop_reason: Optional[str] = None, user: Optional[str] = None,
-                 thinking_enabled: bool = False, reasoning_effort: str = "high"):
+                 thinking_enabled: bool = False, reasoning_effort: str = "high",
+                 tools: Optional[List[Dict]] = None, tool_choice: str = 'auto'):
         """初始化聊天完成请求对象
         
         Args:
@@ -35,6 +36,8 @@ class ChatCompletionRequest:
             user: 用户标识，可选
             thinking_enabled: 是否启用思考模式，默认False
             reasoning_effort: 思考强度，"high"或"max"，默认"high"
+            tools: 工具定义列表，用于Function Calling，可选
+            tool_choice: 工具选择策略，默认'auto'
         """
         self.model = model
         self.messages = messages
@@ -52,6 +55,8 @@ class ChatCompletionRequest:
         self.user = user
         self.thinking_enabled = thinking_enabled
         self.reasoning_effort = reasoning_effort
+        self.tools = tools
+        self.tool_choice = tool_choice
     
     def to_dict(self) -> Dict[str, Any]:
         """将请求对象转换为字典格式
@@ -74,7 +79,9 @@ class ChatCompletionRequest:
             'echo': self.echo,
             'user': self.user,
             'thinking_enabled': self.thinking_enabled,
-            'reasoning_effort': self.reasoning_effort
+            'reasoning_effort': self.reasoning_effort,
+            'tools': self.tools,
+            'tool_choice': self.tool_choice
         }
 
 
@@ -201,7 +208,8 @@ def parse_openai_response(response) -> ChatCompletionResponse:
             'message': {
                 'role': choice.message.role,
                 'content': choice.message.content,
-                'reasoning_content': getattr(choice.message, 'reasoning_content', None)
+                'reasoning_content': getattr(choice.message, 'reasoning_content', None),
+                'tool_calls': _serialize_tool_calls(choice.message.tool_calls) if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls else None
             },
             'finish_reason': choice.finish_reason
         }
@@ -244,7 +252,8 @@ def parse_openai_stream_chunk(chunk) -> Dict[str, Any]:
                 'delta': {
                     'role': choice.delta.role if choice.delta.role else None,
                     'content': choice.delta.content if choice.delta.content else None,
-                    'reasoning_content': getattr(choice.delta, 'reasoning_content', None)
+                    'reasoning_content': getattr(choice.delta, 'reasoning_content', None),
+                    'tool_calls': _serialize_tool_calls(choice.delta.tool_calls) if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls else None
                 },
                 'finish_reason': choice.finish_reason
             }
@@ -255,4 +264,21 @@ def parse_openai_stream_chunk(chunk) -> Dict[str, Any]:
     return chunk_data
 
 
+def _serialize_tool_calls(tool_calls):
+    """将 OpenAI tool_calls 对象序列化为字典列表"""
+    if not tool_calls:
+        return None
+    result = []
+    for tc in tool_calls:
+        item = {
+            'index': tc.index if hasattr(tc, 'index') else 0,
+            'id': tc.id if hasattr(tc, 'id') else None,
+            'type': 'function',
+            'function': {
+                'name': tc.function.name if hasattr(tc.function, 'name') and tc.function.name else None,
+                'arguments': tc.function.arguments if hasattr(tc.function, 'arguments') and tc.function.arguments else ''
+            }
+        }
+        result.append(item)
+    return result
 

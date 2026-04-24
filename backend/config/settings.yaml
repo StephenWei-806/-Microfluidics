@@ -24,3 +24,9 @@ api:
   retry_count: 3
   retry_delay: 1
   rate_limit: 100
+
+# 串口配置（微流控芯片通信）
+serial:
+  port: COM6
+  baud_rate: 115200
+  mock_mode: true  # 开发环境默认 mock，生产环境设为 false

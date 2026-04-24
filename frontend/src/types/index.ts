@@ -5,6 +5,7 @@ export interface Message {
   timestamp: number
   isStreaming?: boolean
   reasoningContent?: string
+  toolStatus?: string
 }
 
 export interface Conversation {

@@ -90,6 +90,13 @@ class BaseApiClient(abc.ABC):
         """
         return build_headers(self.api_key, self.auth_method)
 
+    def chat_completions_with_tools(self, request: ChatCompletionRequest):
+        """非流式调用，返回原始响应对象（含 tool_calls）
+        
+        子类可选择实现。默认抛出 NotImplementedError。
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} 不支持工具调用")
+
 class OpenAIClient(BaseApiClient):
     """OpenAI兼容的API客户端（用于DeepSeek API）
     
@@ -148,6 +155,11 @@ class OpenAIClient(BaseApiClient):
             kwargs['frequency_penalty'] = request.frequency_penalty
             kwargs['presence_penalty'] = request.presence_penalty
 
+        # 支持工具调用
+        if request.tools:
+            kwargs['tools'] = request.tools
+            kwargs['tool_choice'] = request.tool_choice
+
         response = self.client.chat.completions.create(**kwargs)
 
         return parse_openai_response(response)
@@ -184,6 +196,11 @@ class OpenAIClient(BaseApiClient):
             kwargs['frequency_penalty'] = request.frequency_penalty
             kwargs['presence_penalty'] = request.presence_penalty
 
+        # 支持工具调用
+        if request.tools:
+            kwargs['tools'] = request.tools
+            kwargs['tool_choice'] = request.tool_choice
+
         response = self.client.chat.completions.create(**kwargs)
 
         for chunk in response:
@@ -198,6 +215,44 @@ class OpenAIClient(BaseApiClient):
         """
         models = self.config.get('models', [])
         return [model['name'] for model in models]
+
+    def chat_completions_with_tools(self, request: ChatCompletionRequest):
+        """非流式调用，返回原始 OpenAI 响应对象（含 tool_calls）
+        
+        专为 Agent Loop 设计，保留完整的 tool_calls 信息。
+        
+        Args:
+            request: 聊天完成请求对象
+            
+        Returns:
+            OpenAI ChatCompletion 原始响应对象
+        """
+        kwargs = {
+            'model': request.model,
+            'messages': request.messages,
+            'max_tokens': request.max_tokens,
+            'n': request.n,
+            'stop': request.stop,
+            'user': request.user,
+            'stream': False
+        }
+        
+        if request.thinking_enabled:
+            kwargs['extra_body'] = {"thinking": {"type": "enabled"}}
+            kwargs['reasoning_effort'] = request.reasoning_effort
+        else:
+            kwargs['temperature'] = request.temperature
+            kwargs['top_p'] = request.top_p
+            kwargs['frequency_penalty'] = request.frequency_penalty
+            kwargs['presence_penalty'] = request.presence_penalty
+        
+        # 工具定义
+        if request.tools:
+            kwargs['tools'] = request.tools
+            kwargs['tool_choice'] = request.tool_choice
+        
+        response = self.client.chat.completions.create(**kwargs)
+        return response  # 返回原始响应对象
 
 class QwenClient(BaseApiClient):
     """千问API客户端（适配OpenAI规范）

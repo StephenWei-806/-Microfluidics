@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, Optional, Generator, List
 from services.config_service import ConfigService
 from services.chip_layout_service import ChipLayoutService
-from services.api_client import ApiClientFactory, ChatCompletionRequest, ChatCompletionResponse
+from services.api_client import ApiClientFactory, BaseApiClient, ChatCompletionRequest, ChatCompletionResponse
 from utils.common_utils import build_messages, extract_content, check_rate_limit, validate_api_config
 
 logger = logging.getLogger(__name__)
@@ -242,6 +242,161 @@ class ApiService:
         client, request = self._build_request_params(api_name, model, prompt, **kwargs)
         for chunk in client.stream_chat_completions(request):
             yield chunk
+    
+    def agentic_stream_api(self, api_name: str, model: str, prompt: str,
+                           tool_registry, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """支持工具调用的 Agent 循环流式 API
+        
+        实现完整的 Agent Loop：非流式调用检测工具调用 → 执行工具 → 反馈结果 → 循环，
+        最终文本响应使用流式输出。
+        
+        Yields SSE 数据块：
+        - {"type": "tool_status", "message": "..."} 工具状态事件
+        - {"choices": [...]} 常规文本流数据块
+        
+        Args:
+            api_name: API名称
+            model: 模型名称
+            prompt: 用户提示词
+            tool_registry: ToolRegistry 实例
+            **kwargs: 额外参数（max_tokens, temperature, thinking_enabled 等）
+        """
+        import json as _json
+        
+        # 1. 加载提示词模板并合并（复用现有逻辑）
+        prompt_config = self._load_prompt_template('v1')
+        if prompt_config:
+            logger.info("已加载v1提示词模板，开始合并用户输入（agentic模式）")
+            prompt = self._merge_prompt_with_template(prompt, prompt_config)
+        else:
+            logger.info("未能加载提示词模板，直接使用用户原始输入（agentic模式）")
+        
+        # 2. 构建初始消息列表
+        messages = self._build_messages(prompt)
+        tools = tool_registry.get_tool_definitions()
+        
+        max_iterations = 5
+        client = self._get_api_client(api_name)
+        
+        # 若客户端未真正实现工具调用（基类默认抛出 NotImplementedError），回退到普通流式模式
+        if type(client).chat_completions_with_tools is BaseApiClient.chat_completions_with_tools:
+            logger.warning(f"[AgentLoop] API {api_name} 不支持工具调用，回退到普通流式模式")
+            yield from self.stream_api(api_name, model, prompt, **kwargs)
+            return
+        
+        api_config = self.get_api_config(api_name)
+        
+        # 从 kwargs 提取参数
+        max_tokens = kwargs.get('max_tokens', 1024)
+        temperature = kwargs.get('temperature', 0.7)
+        thinking_enabled = kwargs.get('thinking_enabled', False)
+        reasoning_effort = kwargs.get('reasoning_effort', 'high')
+        
+        for iteration in range(max_iterations):
+            logger.info(f"[AgentLoop] 迭代 {iteration + 1}/{max_iterations}")
+            
+            # 3. 非流式调用（带工具定义，检测工具调用）
+            request_obj = ChatCompletionRequest(
+                model=model or api_config.get('default_model', ''),
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=False,
+                thinking_enabled=thinking_enabled,
+                reasoning_effort=reasoning_effort,
+                tools=tools,
+                tool_choice='auto'
+            )
+            
+            # 速率限制检查
+            self._check_rate_limit(api_name)
+            
+            # 非流式调用
+            response = client.chat_completions_with_tools(request_obj)
+            
+            # 4. 检查响应中是否有 tool_calls
+            choice = response.choices[0]
+            message = choice.message
+            
+            if message.tool_calls:
+                logger.info(f"[AgentLoop] AI 请求调用 {len(message.tool_calls)} 个工具")
+                
+                # 将 assistant 的消息（含 tool_calls）追加到 messages
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        }
+                        for tc in message.tool_calls
+                    ]
+                }
+                messages.append(assistant_msg)
+                
+                # 逐个执行工具
+                for tc in message.tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        arguments = _json.loads(tc.function.arguments)
+                    except _json.JSONDecodeError:
+                        arguments = {}
+                    
+                    logger.info(f"[AgentLoop] 执行工具: {tool_name}, 参数: {str(arguments)[:200]}")
+                    
+                    # yield 工具开始状态
+                    yield {"type": "tool_status", "message": f"正在执行: {tool_name}..."}
+                    
+                    # 执行工具
+                    result = tool_registry.execute_tool(tool_name, arguments)
+                    
+                    logger.info(f"[AgentLoop] 工具 {tool_name} 执行完成, 结果: {result[:200]}")
+                    
+                    # 追加 tool result 到 messages
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result
+                    })
+                    
+                    # yield 工具完成状态
+                    yield {"type": "tool_status", "message": f"工具 {tool_name} 执行完成"}
+                
+                # 继续循环，让 AI 处理工具结果
+                continue
+            
+            # 5. 无 tool_calls → 最终文本回复
+            if message.content:
+                logger.info(f"[AgentLoop] AI 返回最终文本（非流式），长度: {len(message.content)}")
+                # 将完整文本作为一个 chunk 发送（模拟流式格式）
+                yield {
+                    'id': response.id if hasattr(response, 'id') else '',
+                    'object': 'chat.completion.chunk',
+                    'created': response.created if hasattr(response, 'created') else 0,
+                    'model': response.model if hasattr(response, 'model') else model,
+                    'choices': [{
+                        'index': 0,
+                        'delta': {
+                            'role': 'assistant',
+                            'content': message.content,
+                            'reasoning_content': getattr(message, 'reasoning_content', None)
+                        },
+                        'finish_reason': choice.finish_reason
+                    }]
+                }
+            break
+        else:
+            # 达到最大迭代次数
+            logger.warning(f"[AgentLoop] 达到最大迭代次数 {max_iterations}")
+            yield {
+                "type": "tool_status",
+                "message": f"警告：工具调用循环已达最大次数({max_iterations})，已停止"
+            }
     
     def get_models(self, api_name: str) -> List[str]:
         client = self._get_api_client(api_name)

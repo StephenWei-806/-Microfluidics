@@ -71,6 +71,7 @@ export const apiClient = {
     temperature?: number
     thinking_enabled?: boolean
     reasoning_effort?: string
+    tools_enabled?: boolean
   }): Promise<string> {
     try {
       const response = await api.post('/stream/init', params)

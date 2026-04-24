@@ -116,6 +116,9 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = true
 
       // 1. 初始化流式请求，获取 stream_id
+      // 仅对支持工具调用的 API（OpenAI 兼容接口，如 deepseek）启用工具
+      const isToolSupported = ['deepseek'].includes(apiConfig.config.currentApi)
+
       const streamId = await apiClient.initStream({
         api_name: apiConfig.config.currentApi,
         model: apiConfig.config.modelConfig.model,
@@ -123,12 +126,26 @@ export const useChatStore = defineStore('chat', () => {
         max_tokens: apiConfig.config.modelConfig.maxTokens,
         temperature: apiConfig.config.modelConfig.temperature,
         thinking_enabled: apiConfig.config.modelConfig.thinkingEnabled,
-        reasoning_effort: apiConfig.config.modelConfig.reasoningEffort
+        reasoning_effort: apiConfig.config.modelConfig.reasoningEffort,
+        tools_enabled: isToolSupported
       })
 
       // 2. 创建 EventSource 连接
       const callbacks: EventSourceCallbacks = {
         onMessage: (chunk) => {
+          // 处理工具状态事件
+          if (chunk.type === 'tool_status') {
+            const currentMessage = conversation.messages[assistantMessageIndex]
+            if (currentMessage) {
+              conversation.messages[assistantMessageIndex] = {
+                ...currentMessage,
+                toolStatus: chunk.message
+              }
+              conversation.updatedAt = Date.now()
+            }
+            return
+          }
+
           // 从 chunk.choices[0].delta.content 取出内容
           const deltaContent = chunk.choices?.[0]?.delta?.content
 
@@ -151,7 +168,8 @@ export const useChatStore = defineStore('chat', () => {
             if (currentMessage) {
               conversation.messages[assistantMessageIndex] = {
                 ...currentMessage,
-                content: currentMessage.content + deltaContent
+                content: currentMessage.content + deltaContent,
+                toolStatus: undefined  // 清除工具状态
               }
             }
             // 触发Vue响应性更新 - 通过更新时间戳

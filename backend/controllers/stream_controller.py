@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 from .base import error_handler, SSE_HEADERS
 from . import api_service
+from . import tool_registry
 import uuid
 import time
 import json
@@ -24,7 +25,7 @@ def _cleanup_expired_streams():
         del _stream_requests[sid]
 
 
-def stream_api_response(api_name, model, prompt, **kwargs):
+def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
     """SSE流式响应生成器
     
     生成SSE格式的流式响应数据，用于Server-Sent Events推送。
@@ -33,6 +34,7 @@ def stream_api_response(api_name, model, prompt, **kwargs):
         api_name: API名称
         model: 模型名称
         prompt: 用户提示词
+        tools_enabled: 是否启用工具调用（Agent Loop模式）
         **kwargs: 额外的请求参数（max_tokens, temperature等）
         
     Yields:
@@ -41,12 +43,24 @@ def stream_api_response(api_name, model, prompt, **kwargs):
     Raises:
         不抛出异常，内部捕获并返回错误信息
     """
-    logger.info(f'[SSE] 开始发送SSE流: api_name={api_name}, model={model}')
+    logger.info(f'[SSE] 开始发送SSE流: api_name={api_name}, model={model}, tools_enabled={tools_enabled}')
     try:
-        for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
-            chunk_str = json.dumps(chunk)
-            logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
-            yield f'data: {chunk_str}\n\n'
+        if tools_enabled:
+            # 使用 Agent Loop（支持工具调用）
+            for chunk in api_service.agentic_stream_api(
+                api_name, model, prompt,
+                tool_registry=tool_registry,
+                **kwargs
+            ):
+                chunk_str = json.dumps(chunk)
+                logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                yield f'data: {chunk_str}\n\n'
+        else:
+            # 现有逻辑：普通流式调用
+            for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
+                chunk_str = json.dumps(chunk)
+                logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                yield f'data: {chunk_str}\n\n'
         logger.info('[SSE] 流式传输完成')
         yield 'data: [DONE]\n\n'
     except req_lib.exceptions.ReadTimeout as e:
@@ -75,6 +89,7 @@ def init_stream():
     temperature = data.get('temperature', 0.7)
     thinking_enabled = data.get('thinking_enabled', False)
     reasoning_effort = data.get('reasoning_effort', 'high')
+    tools_enabled = data.get('tools_enabled', False)
     
     # 记录请求参数
     prompt_preview = prompt[:50] if prompt else ''
@@ -104,7 +119,8 @@ def init_stream():
             'max_tokens': max_tokens,
             'temperature': temperature,
             'thinking_enabled': thinking_enabled,
-            'reasoning_effort': reasoning_effort
+            'reasoning_effort': reasoning_effort,
+            'tools_enabled': tools_enabled
         },
         'created_at': time.time()
     }
@@ -139,11 +155,13 @@ def stream_by_id(stream_id):
     
     # 获取参数并调用流式响应生成器
     params = stream_data['params']
+    tools_enabled = params.get('tools_enabled', False)
     response = Response(
         stream_api_response(
             params['api_name'],
             params['model'],
             params['prompt'],
+            tools_enabled=tools_enabled,
             max_tokens=params['max_tokens'],
             temperature=params['temperature'],
             thinking_enabled=params.get('thinking_enabled', False),
@@ -185,6 +203,7 @@ def stream_api():
     temperature = data.get('temperature', 0.7)
     thinking_enabled = data.get('thinking_enabled', False)
     reasoning_effort = data.get('reasoning_effort', 'high')
+    tools_enabled = data.get('tools_enabled', False)
     
     logger.info(f'[SSE] POST /stream 连接开始: api_name={api_name}, model={model}')
     
@@ -198,6 +217,7 @@ def stream_api():
     response = Response(
         stream_api_response(
             api_name, model, prompt,
+            tools_enabled=tools_enabled,
             max_tokens=max_tokens,
             temperature=temperature,
             thinking_enabled=thinking_enabled,

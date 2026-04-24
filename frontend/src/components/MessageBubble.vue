@@ -16,6 +16,11 @@
           <div class="reasoning-content" v-html="renderedReasoningContent"></div>
         </div>
       </div>
+      <!-- 工具执行状态 -->
+      <div v-if="message.toolStatus" class="tool-status">
+        <span class="tool-status-spinner"></span>
+        <span class="tool-status-text">{{ message.toolStatus }}</span>
+      </div>
       <!-- 流式传输中：分段渲染，支持实时显示已完成的 mermaid 块 -->
       <div v-if="message.isStreaming" class="content-text streaming-mode">
         <template v-for="(seg, idx) in streamSegments" :key="idx">
@@ -456,6 +461,37 @@ onUnmounted(() => {
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+// 工具执行状态样式
+.tool-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.tool-status-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ddd;
+  border-top-color: #666;
+  border-radius: 50%;
+  animation: tool-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.tool-status-text {
+  line-height: 1.4;
+}
+
+@keyframes tool-spin {
+  to { transform: rotate(360deg); }
 }
 
 // 思维链折叠面板样式
