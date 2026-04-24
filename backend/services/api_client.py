@@ -104,10 +104,17 @@ class OpenAIClient(BaseApiClient):
             config: 客户端配置字典，包含api_key、base_url等
         """
         super().__init__(config)
-        self.client = OpenAI(
-            api_key=self.api_key or '',
-            base_url=self.base_url
-        )
+        self._client = None  # 延迟初始化，避免仅读取配置时也强制创建SDK客户端
+
+    @property
+    def client(self):
+        """延迟初始化OpenAI SDK客户端"""
+        if self._client is None:
+            self._client = OpenAI(
+                api_key=self.api_key or 'placeholder',
+                base_url=self.base_url
+            )
+        return self._client
     
     def chat_completions(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """执行非流式聊天完成请求

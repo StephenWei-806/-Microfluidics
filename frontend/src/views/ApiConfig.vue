@@ -134,10 +134,32 @@ watch(() => apiConfigStore.config, (newConfig) => {
   form.isConfigValid = newConfig.isConfigValid
 }, { deep: true })
 
+/**
+ * 从后端响应中安全提取 models 数组
+ * 后端返回格式: {code, message, data: {api_name, models: [...]}}
+ * apiClient 已做一层 response.data 解包，所以 result = {code, message, data: {...}}
+ */
+function extractModels(result: any): string[] {
+  // 路径1: result.data.models （标准路径）
+  if (result?.data?.models && Array.isArray(result.data.models)) {
+    return result.data.models
+  }
+  // 路径2: result.models （如果 interceptor 进一步解包了 data）
+  if (result?.models && Array.isArray(result.models)) {
+    return result.models
+  }
+  // 路径3: result 本身就是数组
+  if (Array.isArray(result)) {
+    return result
+  }
+  console.warn('[loadModels] 无法从响应中提取 models，原始响应:', result)
+  return []
+}
+
 async function loadModels() {
   try {
-    const response = await apiClient.getModels(form.currentApi)
-    availableModels.value = response.data.models || []
+    const result = await apiClient.getModels(form.currentApi)
+    availableModels.value = extractModels(result)
   } catch (error) {
     console.error('加载模型列表失败:', error)
     availableModels.value = []

@@ -7,8 +7,6 @@
       <!-- 思维链折叠面板 - 仅当有 reasoningContent 时显示 -->
       <div v-if="hasReasoningContent" class="reasoning-panel">
         <div class="reasoning-header" @click="reasoningExpanded = !reasoningExpanded">
-          <span class="reasoning-icon">💭</span>
-          <span class="reasoning-title">AI 思考过程</span>
           <span v-if="message.isStreaming && !message.content" class="reasoning-status">思考中...</span>
           <el-icon class="reasoning-arrow" :class="{ expanded: reasoningExpanded }">
             <ArrowRight />

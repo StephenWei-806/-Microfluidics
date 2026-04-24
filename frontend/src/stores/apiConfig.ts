@@ -44,8 +44,10 @@ export const useApiConfigStore = defineStore('apiConfig', () => {
   async function validateConfig(): Promise<boolean> {
     try {
       const response = await apiClient.validateApiConfig(config.value.currentApi)
-      config.value.isConfigValid = response.data.valid
-      return response.data.valid
+      // 防御性解析: response = {code, message, data: {valid: bool}}
+      const valid = response?.data?.valid ?? (response as any)?.valid ?? false
+      config.value.isConfigValid = valid
+      return valid
     } catch {
       config.value.isConfigValid = false
       return false
