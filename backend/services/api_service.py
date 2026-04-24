@@ -125,6 +125,8 @@ class ApiService:
         logprobs = kwargs.get('logprobs')
         echo = kwargs.get('echo', False)
         user = kwargs.get('user')
+        thinking_enabled = kwargs.get('thinking_enabled', False)
+        reasoning_effort = kwargs.get('reasoning_effort', 'high')
         
         messages = self._build_messages(prompt, system_prompt)
         
@@ -141,7 +143,9 @@ class ApiService:
             stop=stop,
             logprobs=logprobs,
             echo=echo,
-            user=user
+            user=user,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort
         )
         
         client = self._get_api_client(api_name)

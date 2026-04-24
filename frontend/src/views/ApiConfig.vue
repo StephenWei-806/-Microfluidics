@@ -49,7 +49,28 @@
             :max="2"
             :step="0.1"
             show-input
+            :disabled="form.currentApi === 'deepseek' && form.modelConfig.thinkingEnabled"
           />
+        </el-form-item>
+
+        <!-- Thinking Mode 开关 - 仅 DeepSeek 时显示 -->
+        <el-form-item label="思考模式" v-if="form.currentApi === 'deepseek'">
+          <el-switch
+            v-model="form.modelConfig.thinkingEnabled"
+            active-text="启用"
+            inactive-text="禁用"
+          />
+          <el-text v-if="form.modelConfig.thinkingEnabled" type="warning" style="margin-left: 12px; font-size: 12px;">
+            启用后 Temperature 和 Top P 参数将不生效
+          </el-text>
+        </el-form-item>
+
+        <!-- Reasoning Effort 选择 - 仅 DeepSeek 且启用思考模式时显示 -->
+        <el-form-item label="思考强度" v-if="form.currentApi === 'deepseek' && form.modelConfig.thinkingEnabled">
+          <el-radio-group v-model="form.modelConfig.reasoningEffort">
+            <el-radio value="high">标准 (High)</el-radio>
+            <el-radio value="max">深度 (Max)</el-radio>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item label="Top P">
@@ -59,6 +80,7 @@
             :max="1"
             :step="0.1"
             show-input
+            :disabled="form.currentApi === 'deepseek' && form.modelConfig.thinkingEnabled"
           />
         </el-form-item>
 

@@ -9,12 +9,13 @@ class ChatCompletionRequest:
     提供统一的接口来构建和转换请求数据。
     """
     
-    def __init__(self, model: str, messages: List[Dict[str, str]], max_tokens: int = 1024, 
-                 temperature: float = 0.7, stream: bool = False, top_p: float = 1.0, 
-                 frequency_penalty: float = 0.0, presence_penalty: float = 0.0, 
-                 n: int = 1, stop: Optional[List[str]] = None, 
-                 logprobs: Optional[int] = None, echo: bool = False, 
-                 stop_reason: Optional[str] = None, user: Optional[str] = None):
+    def __init__(self, model: str, messages: List[Dict[str, str]], max_tokens: int = 1024,
+                 temperature: float = 0.7, stream: bool = False, top_p: float = 1.0,
+                 frequency_penalty: float = 0.0, presence_penalty: float = 0.0,
+                 n: int = 1, stop: Optional[List[str]] = None,
+                 logprobs: Optional[int] = None, echo: bool = False,
+                 stop_reason: Optional[str] = None, user: Optional[str] = None,
+                 thinking_enabled: bool = False, reasoning_effort: str = "high"):
         """初始化聊天完成请求对象
         
         Args:
@@ -32,6 +33,8 @@ class ChatCompletionRequest:
             echo: 是否回显输入，默认False
             stop_reason: 停止原因，可选
             user: 用户标识，可选
+            thinking_enabled: 是否启用思考模式，默认False
+            reasoning_effort: 思考强度，"high"或"max"，默认"high"
         """
         self.model = model
         self.messages = messages
@@ -47,6 +50,8 @@ class ChatCompletionRequest:
         self.echo = echo
         self.stop_reason = stop_reason
         self.user = user
+        self.thinking_enabled = thinking_enabled
+        self.reasoning_effort = reasoning_effort
     
     def to_dict(self) -> Dict[str, Any]:
         """将请求对象转换为字典格式
@@ -67,7 +72,9 @@ class ChatCompletionRequest:
             'stop': self.stop,
             'logprobs': self.logprobs,
             'echo': self.echo,
-            'user': self.user
+            'user': self.user,
+            'thinking_enabled': self.thinking_enabled,
+            'reasoning_effort': self.reasoning_effort
         }
 
 
@@ -193,7 +200,8 @@ def parse_openai_response(response) -> ChatCompletionResponse:
             'index': choice.index,
             'message': {
                 'role': choice.message.role,
-                'content': choice.message.content
+                'content': choice.message.content,
+                'reasoning_content': getattr(choice.message, 'reasoning_content', None)
             },
             'finish_reason': choice.finish_reason
         }
@@ -235,7 +243,8 @@ def parse_openai_stream_chunk(chunk) -> Dict[str, Any]:
                 'index': choice.index,
                 'delta': {
                     'role': choice.delta.role if choice.delta.role else None,
-                    'content': choice.delta.content if choice.delta.content else None
+                    'content': choice.delta.content if choice.delta.content else None,
+                    'reasoning_content': getattr(choice.delta, 'reasoning_content', None)
                 },
                 'finish_reason': choice.finish_reason
             }

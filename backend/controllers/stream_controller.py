@@ -73,6 +73,8 @@ def init_stream():
     prompt = data.get('prompt')
     max_tokens = data.get('max_tokens', 1024)
     temperature = data.get('temperature', 0.7)
+    thinking_enabled = data.get('thinking_enabled', False)
+    reasoning_effort = data.get('reasoning_effort', 'high')
     
     # 记录请求参数
     prompt_preview = prompt[:50] if prompt else ''
@@ -100,7 +102,9 @@ def init_stream():
             'model': model,
             'prompt': prompt,
             'max_tokens': max_tokens,
-            'temperature': temperature
+            'temperature': temperature,
+            'thinking_enabled': thinking_enabled,
+            'reasoning_effort': reasoning_effort
         },
         'created_at': time.time()
     }
@@ -141,7 +145,9 @@ def stream_by_id(stream_id):
             params['model'],
             params['prompt'],
             max_tokens=params['max_tokens'],
-            temperature=params['temperature']
+            temperature=params['temperature'],
+            thinking_enabled=params.get('thinking_enabled', False),
+            reasoning_effort=params.get('reasoning_effort', 'high')
         ),
         mimetype='text/event-stream',
         headers=SSE_HEADERS
@@ -163,6 +169,8 @@ def stream_api():
         - prompt: 用户提示词（必填）
         - max_tokens: 最大token数，默认1024
         - temperature: 采样温度，默认0.7
+        - thinking_enabled: 是否启用思考模式，默认False
+        - reasoning_effort: 推理努力程度，默认'high'
         
     Returns:
         Response: SSE流式响应或JSON错误响应
@@ -175,6 +183,8 @@ def stream_api():
     prompt = data.get('prompt')
     max_tokens = data.get('max_tokens', 1024)
     temperature = data.get('temperature', 0.7)
+    thinking_enabled = data.get('thinking_enabled', False)
+    reasoning_effort = data.get('reasoning_effort', 'high')
     
     logger.info(f'[SSE] POST /stream 连接开始: api_name={api_name}, model={model}')
     
@@ -189,7 +199,9 @@ def stream_api():
         stream_api_response(
             api_name, model, prompt,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort
         ),
         mimetype='text/event-stream',
         headers=SSE_HEADERS

@@ -4,6 +4,7 @@ export interface Message {
   content: string
   timestamp: number
   isStreaming?: boolean
+  reasoningContent?: string
 }
 
 export interface Conversation {
@@ -25,6 +26,8 @@ export interface ApiConfig {
     maxTokens: number
     temperature: number
     topP: number
+    thinkingEnabled: boolean
+    reasoningEffort: 'high' | 'max'
   }
   isConfigValid: boolean
 }

@@ -121,7 +121,9 @@ export const useChatStore = defineStore('chat', () => {
         model: apiConfig.config.modelConfig.model,
         prompt: content,
         max_tokens: apiConfig.config.modelConfig.maxTokens,
-        temperature: apiConfig.config.modelConfig.temperature
+        temperature: apiConfig.config.modelConfig.temperature,
+        thinking_enabled: apiConfig.config.modelConfig.thinkingEnabled,
+        reasoning_effort: apiConfig.config.modelConfig.reasoningEffort
       })
 
       // 2. 创建 EventSource 连接
@@ -129,6 +131,20 @@ export const useChatStore = defineStore('chat', () => {
         onMessage: (chunk) => {
           // 从 chunk.choices[0].delta.content 取出内容
           const deltaContent = chunk.choices?.[0]?.delta?.content
+
+          // 处理 reasoning_content（DeepSeek Thinking Mode）
+          const deltaReasoningContent = chunk.choices?.[0]?.delta?.reasoning_content
+          if (deltaReasoningContent) {
+            const currentMessage = conversation.messages[assistantMessageIndex]
+            if (currentMessage) {
+              conversation.messages[assistantMessageIndex] = {
+                ...currentMessage,
+                reasoningContent: (currentMessage.reasoningContent || '') + deltaReasoningContent
+              }
+              conversation.updatedAt = Date.now()
+            }
+          }
+
           if (deltaContent) {
             // 通过数组索引直接替换对象，确保Vue响应性追踪
             const currentMessage = conversation.messages[assistantMessageIndex]

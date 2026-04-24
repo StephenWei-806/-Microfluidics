@@ -4,6 +4,20 @@
       <el-icon :size="32"><ChatDotRound /></el-icon>
     </div>
     <div class="message-content">
+      <!-- 思维链折叠面板 - 仅当有 reasoningContent 时显示 -->
+      <div v-if="hasReasoningContent" class="reasoning-panel">
+        <div class="reasoning-header" @click="reasoningExpanded = !reasoningExpanded">
+          <span class="reasoning-icon">💭</span>
+          <span class="reasoning-title">AI 思考过程</span>
+          <span v-if="message.isStreaming && !message.content" class="reasoning-status">思考中...</span>
+          <el-icon class="reasoning-arrow" :class="{ expanded: reasoningExpanded }">
+            <ArrowRight />
+          </el-icon>
+        </div>
+        <div v-show="reasoningExpanded" class="reasoning-body">
+          <div class="reasoning-content" v-html="renderedReasoningContent"></div>
+        </div>
+      </div>
       <!-- 流式传输中：分段渲染，支持实时显示已完成的 mermaid 块 -->
       <div v-if="message.isStreaming" class="content-text streaming-mode">
         <template v-for="(seg, idx) in streamSegments" :key="idx">
@@ -81,9 +95,10 @@
 </template>
 
 <script setup lang="ts">
-import { watch, nextTick, ref, onUnmounted, onMounted } from 'vue'
-import { ChatDotRound, DocumentCopy, Close, Download } from '@element-plus/icons-vue'
+import { watch, nextTick, ref, onUnmounted, onMounted, computed } from 'vue'
+import { ChatDotRound, DocumentCopy, Close, Download, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { marked } from 'marked'
 import type { Message } from '@/types'
 import 'highlight.js/styles/github.css'
 
@@ -100,6 +115,20 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+// 折叠面板状态
+const reasoningExpanded = ref(false)
+
+// 是否有思维链内容
+const hasReasoningContent = computed(() => {
+  return !!props.message.reasoningContent && props.message.reasoningContent.trim().length > 0
+})
+
+// 渲染后的思维链内容（Markdown → HTML）
+const renderedReasoningContent = computed(() => {
+  if (!props.message.reasoningContent) return ''
+  return marked(props.message.reasoningContent) as string
+})
 
 // 模态框状态
 const showModal = ref(false)
@@ -429,6 +458,111 @@ onUnmounted(() => {
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+// 思维链折叠面板样式
+.reasoning-panel {
+  margin-bottom: 12px;
+  border: 1px solid #e8e8f0;
+  border-radius: 8px;
+  background: #f8f8fc;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #ededf5;
+  }
+}
+
+.reasoning-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.reasoning-title {
+  font-weight: 500;
+  color: #555;
+  flex: 1;
+}
+
+.reasoning-status {
+  color: #909399;
+  font-size: 12px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.reasoning-arrow {
+  transition: transform 0.2s ease;
+  color: #909399;
+  font-size: 14px;
+
+  &.expanded {
+    transform: rotate(90deg);
+  }
+}
+
+.reasoning-body {
+  padding: 0 14px 12px;
+  border-top: 1px solid #e8e8f0;
+}
+
+.reasoning-content {
+  line-height: 1.6;
+  color: #666;
+  font-size: 13px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-top: 10px;
+
+  :deep(p) {
+    margin: 0 0 8px;
+  }
+
+  :deep(code) {
+    background: #eef;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+
+  :deep(pre) {
+    background: #f0f0f8;
+    padding: 10px;
+    border-radius: 6px;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      padding: 0;
+    }
+  }
+
+  :deep(ul), :deep(ol) {
+    padding-left: 20px;
+    margin: 4px 0;
+  }
+
+  :deep(blockquote) {
+    margin: 4px 0;
+    padding-left: 10px;
+    border-left: 3px solid #d0d0e0;
+    color: #888;
+  }
 }
 
 .message-actions {

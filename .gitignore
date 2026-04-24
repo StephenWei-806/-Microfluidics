@@ -128,6 +128,9 @@ dist-ssr
 # 3. IDE 和编辑器配置
 # ============================================
 
+# Qoder IDE
+.qoder/
+
 # VS Code (保留 extensions.json)
 .vscode/*
 !.vscode/extensions.json

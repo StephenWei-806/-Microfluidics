@@ -69,6 +69,8 @@ export const apiClient = {
     prompt: string
     max_tokens?: number
     temperature?: number
+    thinking_enabled?: boolean
+    reasoning_effort?: string
   }): Promise<string> {
     try {
       const response = await api.post('/stream/init', params)

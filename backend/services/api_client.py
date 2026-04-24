@@ -111,60 +111,74 @@ class OpenAIClient(BaseApiClient):
     
     def chat_completions(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """执行非流式聊天完成请求
-        
+
         Args:
             request: 聊天完成请求对象
-            
+
         Returns:
             ChatCompletionResponse: 解析后的统一响应对象
-            
+
         Raises:
             OpenAIError: API调用失败时抛出
         """
-        response = self.client.chat.completions.create(
-            model=request.model,
-            messages=request.messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            n=request.n,
-            stop=request.stop,
-            logprobs=request.logprobs,
-            user=request.user,
-            stream=False
-        )
-        
+        kwargs = {
+            'model': request.model,
+            'messages': request.messages,
+            'max_tokens': request.max_tokens,
+            'n': request.n,
+            'stop': request.stop,
+            'logprobs': request.logprobs,
+            'user': request.user,
+            'stream': False
+        }
+
+        if request.thinking_enabled:
+            kwargs['extra_body'] = {"thinking": {"type": "enabled"}}
+            kwargs['reasoning_effort'] = request.reasoning_effort
+        else:
+            kwargs['temperature'] = request.temperature
+            kwargs['top_p'] = request.top_p
+            kwargs['frequency_penalty'] = request.frequency_penalty
+            kwargs['presence_penalty'] = request.presence_penalty
+
+        response = self.client.chat.completions.create(**kwargs)
+
         return parse_openai_response(response)
     
     def stream_chat_completions(self, request: ChatCompletionRequest) -> Generator[Dict[str, Any], None, None]:
         """执行流式聊天完成请求
-        
+
         Args:
             request: 聊天完成请求对象
-            
+
         Yields:
             Dict[str, Any]: 流式响应数据块
-            
+
         Raises:
             OpenAIError: API调用失败时抛出
         """
-        response = self.client.chat.completions.create(
-            model=request.model,
-            messages=request.messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            n=request.n,
-            stop=request.stop,
-            logprobs=request.logprobs,
-            user=request.user,
-            stream=True
-        )
-        
+        kwargs = {
+            'model': request.model,
+            'messages': request.messages,
+            'max_tokens': request.max_tokens,
+            'n': request.n,
+            'stop': request.stop,
+            'logprobs': request.logprobs,
+            'user': request.user,
+            'stream': True
+        }
+
+        if request.thinking_enabled:
+            kwargs['extra_body'] = {"thinking": {"type": "enabled"}}
+            kwargs['reasoning_effort'] = request.reasoning_effort
+        else:
+            kwargs['temperature'] = request.temperature
+            kwargs['top_p'] = request.top_p
+            kwargs['frequency_penalty'] = request.frequency_penalty
+            kwargs['presence_penalty'] = request.presence_penalty
+
+        response = self.client.chat.completions.create(**kwargs)
+
         for chunk in response:
             chunk_data = parse_openai_stream_chunk(chunk)
             yield chunk_data

@@ -21,19 +21,28 @@ apis:
   deepseek:
     name: deepseek
     api_type: openai
-    base_url: https://api.deepseek.com/v1
+    base_url: https://api.deepseek.com
     api_key: "your_deepseek_api_key"
     auth_method: "bearer"
-    timeout: 30
+    timeout: 60
+    stream_timeout: 180
+    connect_timeout: 10
     retry_count: 3
-    default_model: "deepseek-chat"
+    default_model: "deepseek-v4-flash"
     models:
+      - name: deepseek-v4-flash
+        max_tokens: 8192
+        context_length: 65536
+        supports_thinking: true
+      - name: deepseek-v4-pro
+        max_tokens: 8192
+        context_length: 65536
+        supports_thinking: true
       - name: deepseek-chat
-        max_tokens: 1024
-        context_length: 8192
-      - name: deepseek-llm
-        max_tokens: 2048
-        context_length: 32768
+        max_tokens: 8192
+        context_length: 65536
+        supports_thinking: false
+        deprecated: true
 
 global:
   timeout: 30

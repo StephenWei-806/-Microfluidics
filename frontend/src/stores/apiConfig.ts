@@ -16,7 +16,9 @@ export const useApiConfigStore = defineStore('apiConfig', () => {
       model: '',
       maxTokens: 1024,
       temperature: 0.7,
-      topP: 1.0
+      topP: 1.0,
+      thinkingEnabled: false,
+      reasoningEffort: 'high' as const
     },
     isConfigValid: false
   })
