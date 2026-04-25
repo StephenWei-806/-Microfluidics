@@ -83,17 +83,18 @@ class ApiService:
         self.clients[api_name] = client
         return client
     
-    def _build_messages(self, prompt: str, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
+    def _build_messages(self, prompt: str, system_prompt: Optional[str] = None, history_messages: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
         """构建聊天消息列表
         
         Args:
             prompt: 用户提示词
             system_prompt: 系统提示词，可选
+            history_messages: 历史对话消息列表，可选
             
         Returns:
             List[Dict[str, str]]: 消息列表，包含角色和内容
         """
-        return build_messages(prompt, system_prompt)
+        return build_messages(prompt, system_prompt, history_messages)
     
     def _build_request_params(self, api_name: str, model: str, prompt: str, **kwargs):
         """构建API请求参数
@@ -127,8 +128,9 @@ class ApiService:
         user = kwargs.get('user')
         thinking_enabled = kwargs.get('thinking_enabled', False)
         reasoning_effort = kwargs.get('reasoning_effort', 'high')
+        history_messages = kwargs.get('history_messages')
         
-        messages = self._build_messages(prompt, system_prompt)
+        messages = self._build_messages(prompt, system_prompt, history_messages)
         
         request = ChatCompletionRequest(
             model=model or api_config.get('default_model', ''),
@@ -226,18 +228,23 @@ class ApiService:
             api_name: API名称
             model: 模型名称
             prompt: 用户提示词
-            **kwargs: 可选参数（system_prompt, max_tokens, temperature等）
+            **kwargs: 可选参数（system_prompt, max_tokens, temperature, skip_prompt_merge等）
             
         Yields:
             Dict[str, Any]: 流式响应数据块
         """
+        skip_prompt_merge = kwargs.pop('skip_prompt_merge', False)
+        
         # 加载提示词模板并与用户输入合并
-        prompt_config = self._load_prompt_template('v1')
-        if prompt_config:
-            logger.info(f"已加载v1提示词模板，开始合并用户输入")
-            prompt = self._merge_prompt_with_template(prompt, prompt_config)
+        if not skip_prompt_merge:
+            prompt_config = self._load_prompt_template('v1')
+            if prompt_config:
+                logger.info(f"已加载v1提示词模板，开始合并用户输入")
+                prompt = self._merge_prompt_with_template(prompt, prompt_config)
+            else:
+                logger.info("未能加载提示词模板，直接使用用户原始输入")
         else:
-            logger.info("未能加载提示词模板，直接使用用户原始输入")
+            logger.info("[stream_api] 跳过提示词模板合并（已由上游处理）")
         
         client, request = self._build_request_params(api_name, model, prompt, **kwargs)
         for chunk in client.stream_chat_completions(request):
@@ -272,7 +279,8 @@ class ApiService:
             logger.info("未能加载提示词模板，直接使用用户原始输入（agentic模式）")
         
         # 2. 构建初始消息列表
-        messages = self._build_messages(prompt)
+        history_messages = kwargs.get('history_messages')
+        messages = self._build_messages(prompt, history_messages=history_messages)
         tools = tool_registry.get_tool_definitions()
         
         max_iterations = 5
@@ -281,7 +289,7 @@ class ApiService:
         # 若客户端未真正实现工具调用（基类默认抛出 NotImplementedError），回退到普通流式模式
         if type(client).chat_completions_with_tools is BaseApiClient.chat_completions_with_tools:
             logger.warning(f"[AgentLoop] API {api_name} 不支持工具调用，回退到普通流式模式")
-            yield from self.stream_api(api_name, model, prompt, **kwargs)
+            yield from self.stream_api(api_name, model, prompt, skip_prompt_merge=True, **kwargs)
             return
         
         api_config = self.get_api_config(api_name)
@@ -370,25 +378,25 @@ class ApiService:
                 # 继续循环，让 AI 处理工具结果
                 continue
             
-            # 5. 无 tool_calls → 最终文本回复
+            # 5. 无 tool_calls → 最终文本回复，切换到流式模式逐 token 输出
             if message.content:
-                logger.info(f"[AgentLoop] AI 返回最终文本（非流式），长度: {len(message.content)}")
-                # 将完整文本作为一个 chunk 发送（模拟流式格式）
-                yield {
-                    'id': response.id if hasattr(response, 'id') else '',
-                    'object': 'chat.completion.chunk',
-                    'created': response.created if hasattr(response, 'created') else 0,
-                    'model': response.model if hasattr(response, 'model') else model,
-                    'choices': [{
-                        'index': 0,
-                        'delta': {
-                            'role': 'assistant',
-                            'content': message.content,
-                            'reasoning_content': getattr(message, 'reasoning_content', None)
-                        },
-                        'finish_reason': choice.finish_reason
-                    }]
-                }
+                logger.info(f"[AgentLoop] AI 返回最终文本，切换到流式模式输出，长度: {len(message.content)}")
+                
+                # 使用相同的 messages 上下文，改为流式请求获取逐 token 输出
+                stream_request = ChatCompletionRequest(
+                    model=model or api_config.get('default_model', ''),
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stream=True,
+                    thinking_enabled=thinking_enabled,
+                    reasoning_effort=reasoning_effort
+                    # 不传 tools 和 tool_choice，避免再次触发工具检测
+                )
+                
+                # 流式调用，逐块 yield
+                for chunk in client.stream_chat_completions(stream_request):
+                    yield chunk
             break
         else:
             # 达到最大迭代次数

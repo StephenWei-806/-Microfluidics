@@ -1,11 +1,13 @@
 from flask import jsonify
 
 SSE_HEADERS = {
-    'Cache-Control': 'no-cache',
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
     'X-Accel-Buffering': 'no',
     'Connection': 'keep-alive',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
 

@@ -67,6 +67,7 @@ export const apiClient = {
     api_name: string
     model: string
     prompt: string
+    messages?: Array<{ role: string; content: string }>
     max_tokens?: number
     temperature?: number
     thinking_enabled?: boolean
@@ -129,13 +130,18 @@ export function createEventSource(
   callbacks: EventSourceCallbacks
 ): EventSource {
   const url = `${baseURL}/stream/${streamId}`
+  console.log('[SSE] EventSource connecting to:', url)
   const eventSource = new EventSource(url)
 
   eventSource.onmessage = (event) => {
     const rawData = event.data
+    console.log('[SSE] Message received:', {
+      length: rawData.length,
+      preview: rawData.substring(0, 80)
+    })
 
-    // 检测完成信号
     if (rawData === '[DONE]') {
+      console.log('[SSE] Received [DONE] signal, closing connection')
       eventSource.close()
       callbacks.onComplete()
       return
@@ -144,14 +150,20 @@ export function createEventSource(
     try {
       const chunk = JSON.parse(rawData)
       callbacks.onMessage(chunk)
-    } catch {
-      // 静默处理 SSE 数据解析失败
+    } catch (err) {
+      console.error('[SSE] JSON parse error:', {
+        error: err instanceof Error ? err.message : String(err),
+        rawData: rawData.substring(0, 200)
+      })
     }
   }
 
-  eventSource.onerror = () => {
+  eventSource.onerror = (err) => {
+    const state = eventSource.readyState
+    const stateStr = state === 0 ? 'CONNECTING' : state === 1 ? 'OPEN' : 'CLOSED'
+    console.error(`[SSE] Connection error (state: ${stateStr}):`, err)
     eventSource.close()
-    callbacks.onError('SSE 连接发生错误，请稍后重试')
+    callbacks.onError('SSE 连接发生错误，请查看控制台日志了解详情')
   }
 
   return eventSource

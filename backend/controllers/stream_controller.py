@@ -44,6 +44,8 @@ def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
         不抛出异常，内部捕获并返回错误信息
     """
     logger.info(f'[SSE] 开始发送SSE流: api_name={api_name}, model={model}, tools_enabled={tools_enabled}')
+    print(f'[SSE-DEBUG] === 生成器启动: api_name={api_name}, model={model}, tools_enabled={tools_enabled}, kwargs={list(kwargs.keys())}', flush=True)
+    chunk_count = 0
     try:
         if tools_enabled:
             # 使用 Agent Loop（支持工具调用）
@@ -53,27 +55,38 @@ def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
                 **kwargs
             ):
                 chunk_str = json.dumps(chunk)
+                chunk_count += 1
                 logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
                 yield f'data: {chunk_str}\n\n'
         else:
             # 现有逻辑：普通流式调用
             for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
                 chunk_str = json.dumps(chunk)
+                chunk_count += 1
                 logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
                 yield f'data: {chunk_str}\n\n'
         logger.info('[SSE] 流式传输完成')
+        print(f'[SSE-DEBUG] >>> 发送 [DONE] 信号, 共发送 {chunk_count} 个数据块', flush=True)
         yield 'data: [DONE]\n\n'
     except req_lib.exceptions.ReadTimeout as e:
         logger.error(f'[SSE] 流式传输读取超时: {str(e)}')
+        print(f'[SSE-DEBUG] !!! 异常: {type(e).__name__}: {str(e)}', flush=True)
         yield f'data: {json.dumps({"error": "API响应超时，请稍后重试或缩短提问内容"})}\n\n'
+        print(f'[SSE-DEBUG] >>> 发送 [DONE] 信号(异常后), 共发送 {chunk_count} 个数据块', flush=True)
         yield 'data: [DONE]\n\n'
     except req_lib.exceptions.ConnectionError as e:
         logger.error(f'[SSE] 流式传输连接错误: {str(e)}')
+        print(f'[SSE-DEBUG] !!! 异常: {type(e).__name__}: {str(e)}', flush=True)
         yield f'data: {json.dumps({"error": "无法连接到API服务，请检查网络连接"})}\n\n'
+        print(f'[SSE-DEBUG] >>> 发送 [DONE] 信号(异常后), 共发送 {chunk_count} 个数据块', flush=True)
         yield 'data: [DONE]\n\n'
     except Exception as e:
-        logger.error(f'[SSE] 流式传输异常: {str(e)}')
+        logger.error(f'[SSE] 流式传输异常: {str(e)}', exc_info=True)
+        print(f'[SSE-DEBUG] !!! 异常: {type(e).__name__}: {str(e)}', flush=True)
         yield f'data: {json.dumps({"error": str(e)})}\n\n'
+        print(f'[SSE-DEBUG] >>> 发送 [DONE] 信号(异常后), 共发送 {chunk_count} 个数据块', flush=True)
         yield 'data: [DONE]\n\n'
 
 
@@ -90,10 +103,12 @@ def init_stream():
     thinking_enabled = data.get('thinking_enabled', False)
     reasoning_effort = data.get('reasoning_effort', 'high')
     tools_enabled = data.get('tools_enabled', False)
+    messages = data.get('messages', [])
     
     # 记录请求参数
     prompt_preview = prompt[:50] if prompt else ''
     logger.info(f'[SSE] 初始化流式请求: api_name={api_name}, model={model}, prompt={prompt_preview}...')
+    print(f'[SSE-DEBUG] === 初始化流: stream_id=<pending>, api={api_name}, model={model}, tools_enabled={tools_enabled}', flush=True)
     
     # 验证必填参数
     if not api_name or not model or not prompt:
@@ -109,6 +124,7 @@ def init_stream():
     # 生成 stream_id
     stream_id = str(uuid.uuid4())
     logger.info(f'[SSE] 生成 stream_id: {stream_id}')
+    print(f'[SSE-DEBUG] === 初始化流: stream_id={stream_id}, api={api_name}, model={model}', flush=True)
     
     # 存储请求参数
     _stream_requests[stream_id] = {
@@ -120,7 +136,8 @@ def init_stream():
             'temperature': temperature,
             'thinking_enabled': thinking_enabled,
             'reasoning_effort': reasoning_effort,
-            'tools_enabled': tools_enabled
+            'tools_enabled': tools_enabled,
+            'messages': messages
         },
         'created_at': time.time()
     }
@@ -135,42 +152,54 @@ def init_stream():
 @stream_bp.route('/stream/<stream_id>', methods=['GET'])
 def stream_by_id(stream_id):
     """通过 stream_id 获取 SSE 流（两步式 EventSource 方案）"""
-    logger.info(f'[SSE] 连接建立: stream_id={stream_id}')
-    
-    # 从存储中取出参数（一次性使用）
-    stream_data = _stream_requests.pop(stream_id, None)
-    
-    if stream_data is None:
-        logger.warning(f'[SSE] 无效或过期的 stream_id: {stream_id}')
-        # stream_id 不存在或已过期，返回 SSE 格式的错误
-        def error_stream():
-            yield 'data: {"error": "Invalid or expired stream_id"}\n\n'
-            yield 'data: [DONE]\n\n'
+    try:
+        logger.info(f'[SSE] 连接建立: stream_id={stream_id}')
+        print(f'[SSE-DEBUG] === 连接建立: stream_id={stream_id}, 时间={time.strftime("%H:%M:%S")}', flush=True)
         
-        return Response(
-            error_stream(),
+        # 从存储中取出参数（一次性使用）
+        stream_data = _stream_requests.pop(stream_id, None)
+        
+        if stream_data is None:
+            logger.warning(f'[SSE] 无效或过期的 stream_id: {stream_id}')
+            print(f'[SSE-DEBUG] !!! 无效或过期的 stream_id: {stream_id}', flush=True)
+            # stream_id 不存在或已过期，返回 SSE 格式的错误
+            def error_stream():
+                yield 'data: {"error": "Invalid or expired stream_id"}\n\n'
+                yield 'data: [DONE]\n\n'
+            
+            return Response(
+                error_stream(),
+                mimetype='text/event-stream',
+                headers=SSE_HEADERS
+            )
+        
+        # 获取参数并调用流式响应生成器
+        params = stream_data['params']
+        print(f'[SSE-DEBUG] === 请求参数: {json.dumps(params, ensure_ascii=False, default=str)[:500]}', flush=True)
+        tools_enabled = params.get('tools_enabled', False)
+        history_messages = params.get('messages', [])
+        response = Response(
+            stream_api_response(
+                params['api_name'],
+                params['model'],
+                params['prompt'],
+                tools_enabled=tools_enabled,
+                history_messages=history_messages,
+                max_tokens=params['max_tokens'],
+                temperature=params['temperature'],
+                thinking_enabled=params.get('thinking_enabled', False),
+                reasoning_effort=params.get('reasoning_effort', 'high')
+            ),
             mimetype='text/event-stream',
             headers=SSE_HEADERS
         )
-    
-    # 获取参数并调用流式响应生成器
-    params = stream_data['params']
-    tools_enabled = params.get('tools_enabled', False)
-    response = Response(
-        stream_api_response(
-            params['api_name'],
-            params['model'],
-            params['prompt'],
-            tools_enabled=tools_enabled,
-            max_tokens=params['max_tokens'],
-            temperature=params['temperature'],
-            thinking_enabled=params.get('thinking_enabled', False),
-            reasoning_effort=params.get('reasoning_effort', 'high')
-        ),
-        mimetype='text/event-stream',
-        headers=SSE_HEADERS
-    )
-    return response
+        return response
+    except Exception as e:
+        logger.error(f'[SSE] stream_by_id异常: {str(e)}', exc_info=True)
+        def error_stream():
+            yield f'data: {json.dumps({"error": f"服务器内部错误: {str(e)}"})}\n\n'
+            yield 'data: [DONE]\n\n'
+        return Response(error_stream(), mimetype='text/event-stream', headers=SSE_HEADERS)
 
 
 @stream_bp.route('/stream', methods=['POST'])
@@ -204,8 +233,10 @@ def stream_api():
     thinking_enabled = data.get('thinking_enabled', False)
     reasoning_effort = data.get('reasoning_effort', 'high')
     tools_enabled = data.get('tools_enabled', False)
+    history_messages = data.get('messages', [])
     
     logger.info(f'[SSE] POST /stream 连接开始: api_name={api_name}, model={model}')
+    print(f'[SSE-DEBUG] === POST /stream 连接开始: api={api_name}, model={model}, tools_enabled={tools_enabled}, 时间={time.strftime("%H:%M:%S")}', flush=True)
     
     if not api_name or not model or not prompt:
         return jsonify({
@@ -218,6 +249,7 @@ def stream_api():
         stream_api_response(
             api_name, model, prompt,
             tools_enabled=tools_enabled,
+            history_messages=history_messages,
             max_tokens=max_tokens,
             temperature=temperature,
             thinking_enabled=thinking_enabled,

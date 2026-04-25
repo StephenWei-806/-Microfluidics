@@ -23,12 +23,13 @@ def build_headers(api_key: str, auth_method: str = 'bearer') -> Dict[str, str]:
     return headers
 
 
-def build_messages(prompt: str, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
+def build_messages(prompt: str, system_prompt: Optional[str] = None, history_messages: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
     """构建聊天消息格式
     
     Args:
         prompt: 用户提示词
         system_prompt: 系统提示词（可选）
+        history_messages: 历史对话消息列表（可选）
         
     Returns:
         消息列表
@@ -40,6 +41,23 @@ def build_messages(prompt: str, system_prompt: Optional[str] = None) -> List[Dic
             'role': 'system',
             'content': system_prompt
         })
+    
+    # 添加历史对话消息（安全校验）
+    if history_messages:
+        allowed_roles = {'user', 'assistant', 'system'}
+        for msg in history_messages:
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get('role', 'user')
+            if role not in allowed_roles:
+                role = 'user'
+            content = str(msg.get('content', '')).strip()
+            if not content:
+                continue
+            messages.append({
+                'role': role,
+                'content': content
+            })
     
     messages.append({
         'role': 'user',

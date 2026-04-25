@@ -119,10 +119,19 @@ export const useChatStore = defineStore('chat', () => {
       // 仅对支持工具调用的 API（OpenAI 兼容接口，如 deepseek）启用工具
       const isToolSupported = ['deepseek'].includes(apiConfig.config.currentApi)
 
+      // 收集对话历史（排除刚添加的当前 userMessage 和 assistantMessage 占位消息，保留最近 N 条）
+      const MAX_HISTORY_MESSAGES = 20
+      const allHistory = conversation.messages.slice(0, assistantMessageIndex - 1)
+      const start = Math.max(0, allHistory.length - MAX_HISTORY_MESSAGES)
+      const historyMessages = allHistory
+        .slice(start)
+        .map(msg => ({ role: msg.role, content: msg.content }))
+
       const streamId = await apiClient.initStream({
         api_name: apiConfig.config.currentApi,
         model: apiConfig.config.modelConfig.model,
         prompt: content,
+        messages: historyMessages,
         max_tokens: apiConfig.config.modelConfig.maxTokens,
         temperature: apiConfig.config.modelConfig.temperature,
         thinking_enabled: apiConfig.config.modelConfig.thinkingEnabled,

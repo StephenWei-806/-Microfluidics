@@ -38,11 +38,6 @@ apis:
         max_tokens: 8192
         context_length: 65536
         supports_thinking: true
-      - name: deepseek-chat
-        max_tokens: 8192
-        context_length: 65536
-        supports_thinking: false
-        deprecated: true
 
 global:
   timeout: 30
