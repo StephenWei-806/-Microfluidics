@@ -18,8 +18,9 @@
       </div>
       <!-- 工具执行状态 -->
       <div v-if="message.toolStatus" class="tool-status">
-        <span class="tool-status-spinner"></span>
-        <span class="tool-status-text">{{ message.toolStatus }}</span>
+        <span class="tool-status-icon">🔧</span>
+        <span class="tool-status-label">调用工具中...</span>
+        <span class="tool-status-detail">{{ message.toolStatus }}</span>
       </div>
       <!-- 流式传输中：分段渲染，支持实时显示已完成的 mermaid 块 -->
       <div v-if="message.isStreaming" class="content-text streaming-mode">
@@ -468,30 +469,30 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: #f0f0f0;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 8px;
+  padding: 10px 14px;
+  background: #f0f7ff;
+  border-left: 3px solid #409eff;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 10px;
 }
 
-.tool-status-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #ddd;
-  border-top-color: #666;
-  border-radius: 50%;
-  animation: tool-spin 0.8s linear infinite;
+.tool-status-icon {
+  font-size: 16px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
-.tool-status-text {
-  line-height: 1.4;
+.tool-status-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #409eff;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes tool-spin {
-  to { transform: rotate(360deg); }
+.tool-status-detail {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
 }
 
 // 思维链折叠面板样式
