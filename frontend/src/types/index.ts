@@ -1,3 +1,10 @@
+// 工具执行结果类型
+export interface ToolResult {
+  toolName: string
+  result: string   // JSON 字符串
+  timestamp: number
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -6,6 +13,7 @@ export interface Message {
   isStreaming?: boolean
   reasoningContent?: string
   toolStatus?: string
+  toolResults?: ToolResult[]  // 工具执行结果列表
 }
 
 export interface Conversation {

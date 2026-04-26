@@ -22,6 +22,22 @@
         <span class="tool-status-label">调用工具中...</span>
         <span class="tool-status-detail">{{ message.toolStatus }}</span>
       </div>
+      <!-- 工具执行结果（折叠面板样式） -->
+      <div v-if="message.toolResults?.length" class="tool-results">
+        <div v-for="(tr, idx) in message.toolResults" :key="idx" class="tool-result-item">
+          <div class="tool-result-header" @click="toggleToolResult(idx)">
+            <span class="tool-result-icon">✅</span>
+            <span class="tool-result-name">{{ tr.toolName }}</span>
+            <span class="tool-result-label">执行完成</span>
+            <el-icon class="tool-result-arrow" :class="{ expanded: expandedToolResults.has(idx) }">
+              <ArrowRight />
+            </el-icon>
+          </div>
+          <div v-show="expandedToolResults.has(idx)" class="tool-result-body">
+            <pre class="tool-result-content">{{ formatToolResult(tr.result) }}</pre>
+          </div>
+        </div>
+      </div>
       <!-- 流式传输中：分段渲染，支持实时显示已完成的 mermaid 块 -->
       <div v-if="message.isStreaming" class="content-text streaming-mode">
         <template v-for="(seg, idx) in streamSegments" :key="idx">
@@ -122,6 +138,26 @@ const props = defineProps<Props>()
 
 // 折叠面板状态
 const reasoningExpanded = ref(false)
+
+// 工具结果折叠状态
+const expandedToolResults = ref(new Set<number>())
+
+function toggleToolResult(idx: number) {
+  if (expandedToolResults.value.has(idx)) {
+    expandedToolResults.value.delete(idx)
+  } else {
+    expandedToolResults.value.add(idx)
+  }
+  expandedToolResults.value = new Set(expandedToolResults.value) // 触发响应性
+}
+
+function formatToolResult(result: string): string {
+  try {
+    return JSON.stringify(JSON.parse(result), null, 2)
+  } catch {
+    return result
+  }
+}
 
 // 是否有思维链内容
 const hasReasoningContent = computed(() => {
@@ -462,6 +498,77 @@ onUnmounted(() => {
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+// 工具执行结果折叠面板样式
+.tool-results {
+  margin-bottom: 12px;
+}
+
+.tool-result-item {
+  border: 1px solid #c8e6c9;
+  border-radius: 8px;
+  background: #f1f8e9;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.tool-result-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #e8f5e9;
+  }
+}
+
+.tool-result-icon {
+  font-size: 14px;
+}
+
+.tool-result-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2e7d32;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.tool-result-label {
+  font-size: 12px;
+  color: #66bb6a;
+}
+
+.tool-result-arrow {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  color: #81c784;
+
+  &.expanded {
+    transform: rotate(90deg);
+  }
+}
+
+.tool-result-body {
+  padding: 0 14px 12px;
+  border-top: 1px solid #c8e6c9;
+}
+
+.tool-result-content {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #37474f;
+  background: #fafff8;
+  border-radius: 4px;
+  padding: 10px;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 // 工具执行状态样式

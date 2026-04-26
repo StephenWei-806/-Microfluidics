@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 from .base import error_handler, SSE_HEADERS
 from . import api_service
+from . import config_service
 from . import tool_registry
 import uuid
 import time
@@ -48,23 +49,36 @@ def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
     chunk_count = 0
     try:
         if tools_enabled:
-            # 使用 Agent Loop（支持工具调用）
-            for chunk in api_service.agentic_stream_api(
-                api_name, model, prompt,
-                tool_registry=tool_registry,
-                **kwargs
-            ):
-                chunk_str = json.dumps(chunk)
-                chunk_count += 1
-                logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
-                print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
-                yield f'data: {chunk_str}\n\n'
+            # 千问 API 降级：千问不支持 function calling，自动回退到普通流式对话
+            api_config = api_service.get_api_config(api_name)
+            api_type = api_config.get('api_type', 'openai') if api_config else 'openai'
+            
+            if api_type == 'qwen':
+                logger.info(f'[SSE] 千问 API 不支持工具调用，降级为普通流式对话: api_name={api_name}')
+                print(f'[SSE-DEBUG] === 千问降级: api_name={api_name}, 跳过 tools_enabled', flush=True)
+                for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
+                    chunk_str = json.dumps(chunk)
+                    chunk_count += 1
+                    logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                    print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
+                    yield f'data: {chunk_str}\n\n'
+            else:
+                # OpenAI 兼容 API（DeepSeek 等）：使用流式优先 Agent Loop
+                for chunk in api_service.agentic_stream_api(
+                    api_name, model, prompt,
+                    tool_registry=tool_registry,
+                    **kwargs
+                ):
+                    chunk_str = json.dumps(chunk)
+                    chunk_count += 1
+                    # logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
+                    print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
+                    yield f'data: {chunk_str}\n\n'
         else:
             # 现有逻辑：普通流式调用
             for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
                 chunk_str = json.dumps(chunk)
                 chunk_count += 1
-                logger.info(f'[SSE] 发送数据块: {chunk_str[:100]}...' if len(chunk_str) > 100 else f'[SSE] 发送数据块: {chunk_str}')
                 print(f'[SSE-DEBUG] >>> 发送数据块 #{chunk_count}: {chunk_str[:200]}', flush=True)
                 yield f'data: {chunk_str}\n\n'
         logger.info('[SSE] 流式传输完成')

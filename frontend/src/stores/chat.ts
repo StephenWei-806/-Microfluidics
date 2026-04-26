@@ -155,6 +155,26 @@ export const useChatStore = defineStore('chat', () => {
             return
           }
 
+          // 处理工具执行结果事件
+          if (chunk.type === 'tool_result') {
+            const currentMessage = conversation.messages[assistantMessageIndex]
+            if (currentMessage) {
+              const toolResults = [...(currentMessage.toolResults || [])]
+              toolResults.push({
+                toolName: chunk.tool_name,
+                result: chunk.result,
+                timestamp: Date.now()
+              })
+              conversation.messages[assistantMessageIndex] = {
+                ...currentMessage,
+                toolResults,
+                toolStatus: `${chunk.tool_name} 执行完成`
+              }
+              conversation.updatedAt = Date.now()
+            }
+            return
+          }
+
           // 从 chunk.choices[0].delta.content 取出内容
           const deltaContent = chunk.choices?.[0]?.delta?.content
 
