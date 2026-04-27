@@ -7,7 +7,18 @@
       <!-- 思维链折叠面板 - 仅当有 reasoningContent 时显示 -->
       <div v-if="hasReasoningContent" class="reasoning-panel">
         <div class="reasoning-header" @click="reasoningExpanded = !reasoningExpanded">
-          <span v-if="message.isStreaming && !message.content" class="reasoning-status">思考中...</span>
+          <Transition name="reasoning-status-fade" mode="out-in">
+            <span
+              v-if="reasoningPhase === 'thinking'"
+              key="thinking"
+              class="reasoning-status reasoning-status--thinking"
+            >思考中...</span>
+            <span
+              v-else-if="reasoningPhase === 'done'"
+              key="done"
+              class="reasoning-status reasoning-status--done"
+            >思考完成</span>
+          </Transition>
           <el-icon class="reasoning-arrow" :class="{ expanded: reasoningExpanded }">
             <ArrowRight />
           </el-icon>
@@ -162,6 +173,19 @@ function formatToolResult(result: string): string {
 // 是否有思维链内容
 const hasReasoningContent = computed(() => {
   return !!props.message.reasoningContent && props.message.reasoningContent.trim().length > 0
+})
+
+// 思维链阶段：'thinking'=正在思考；'done'=思考完成（已开始输出正文或整体流已结束）
+// 判定依据：
+//   - 存在 reasoningContent 的前提下；
+//   - 若消息仍在流式传输且正文内容为空，则视为仍在思考；
+//   - 否则（已有正文增量 或 isStreaming 为 false）视为思考完成。
+const reasoningPhase = computed<'thinking' | 'done' | null>(() => {
+  if (!hasReasoningContent.value) return null
+  const msg = props.message
+  const hasContent = !!msg.content && msg.content.length > 0
+  if (msg.isStreaming && !hasContent) return 'thinking'
+  return 'done'
 })
 
 // 渲染后的思维链内容（Markdown → HTML）
@@ -638,14 +662,47 @@ onUnmounted(() => {
 }
 
 .reasoning-status {
-  color: #909399;
   font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.reasoning-status--thinking {
+  color: #909399;
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+.reasoning-status--done {
+  color: #67c23a;
+  font-weight: 500;
+
+  &::before {
+    content: '✓';
+    margin-right: 4px;
+    font-weight: 600;
+  }
 }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+// 思考状态切换动画（思考中 → 思考完成）
+.reasoning-status-fade-enter-active,
+.reasoning-status-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.reasoning-status-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.reasoning-status-fade-leave-to {
+  opacity: 0;
+  transform: translateY(2px);
 }
 
 .reasoning-arrow {
