@@ -1,182 +1,202 @@
-# 微流控AI助手
+# 微流控液滴路径规划系统
 
-基于 Vue 3 + Flask 的全栈 AI 对话应用。
+基于 AI 大模型的微流控液滴路径规划系统，通过自然语言交互实现芯片网格配置、液滴路径规划和硬件控制。
 
-## 项目概述
+## 核心能力
 
-微流控AI助手是一个功能完整的AI对话应用，支持：
-- 多种API配置（千问、DeepSeek）
-- 实时流式对话输出
-- Markdown渲染和代码高亮
-- 多会话对话历史管理
-- 现代化UI界面（参考豆包设计）
+- **AI 对话** — 支持千问和 DeepSeek 双模型
+- **SSE 实时流式通信** — 服务端推送，逐字输出
+- **Mermaid 流程图可视化** — 自动渲染，多层降级容错
+- **Agent Loop 工具调用** — AI 自动调用硬件控制工具
+- **芯片网格配置与管理** — 17×22 可视化编辑
+- **思维链展示** — DeepSeek Thinking Mode 推理过程可视化
 
-## 技术架构
-
-### 前端
-- Vue 3.4 + TypeScript
-- Vite 5.0
-- Pinia 2.1（状态管理）
-- Vue Router 4.2（路由）
-- Element Plus 2.4（UI组件库）
-- Axios 1.6（HTTP客户端）
-
-### 后端
-- Flask 2.0.1
-- PyYAML 6.0.1
-- SSE（Server-Sent Events）实时通信
-
-## 快速开始
-
-### 前置要求
-
-- Python 3.9+
-- Node.js 18+
-- npm 或 yarn
-
-### 项目结构
-
-```
-微流控/
-├── backend/          # Flask后端
-├── frontend/         # Vue3前端
-└── README.md         # 本文件
-```
-
-### 1. 启动后端服务
-
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-
-后端服务将运行在 http://localhost:5000
-
-### 2. 启动前端服务
-
-打开新的终端窗口：
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-前端服务将运行在 http://localhost:3000
-
-### 3. 开始使用
-
-1. 访问 http://localhost:3000
-2. 首次使用会跳转到配置页面
-3. 配置您的API密钥（千问或DeepSeek）
-4. 保存配置后开始对话！
+---
 
 ## 功能特性
 
-### API配置页面
-- 支持千问（Qwen）和DeepSeek两种API
-- 可配置模型参数（最大Token数、温度、Top P）
-- 连接测试功能
-- 配置本地持久化
+### AI 智能对话
 
-### 对话页面
-- 实时流式输出
-- Markdown渲染支持
-- 代码高亮显示
-- 消息复制功能
-- 多会话管理
-- 对话历史本地存储
-- 停止生成功能
-- 清空对话功能
+多模型支持（千问、DeepSeek），SSE 流式响应，DeepSeek 思维链展示，Markdown 富文本渲染。
 
-## API接口
+### 芯片网格配置
 
-后端提供以下RESTful API接口：
+17×22 网格可视化编辑，实时统计各类型单元格数量，多标签页同步更新。
 
-| 接口 | 方法 | 功能 |
-|-----|------|------|
-| `/` | GET | 健康检查 |
-| `/api/health` | GET | API健康检查 |
-| `/api/settings` | GET | 获取系统设置 |
-| `/api/api/config` | GET | 获取API配置 |
-| `/api/api/key` | POST | 更新API密钥 |
-| `/api/api/models/<api_name>` | GET | 获取模型列表 |
-| `/api/api/validate/<api_name>` | GET | 验证API配置 |
-| `/api/api/call` | POST | 调用API |
-| `/api/api/stream` | POST | 流式调用API（SSE） |
-| `/api/prompts/*` | * | 提示词管理接口 |
+### Mermaid 图表
 
-详细API文档请参考 `backend/API文档.md`
+AI 回复中的流程图自动渲染，支持复制 / 下载为 PNG，多层降级容错保证渲染稳定性。
 
-## 配置说明
+### 工具调用（Agent Loop）
 
-### 后端配置
+AI 自动调用 `dispense_droplet` 工具控制芯片硬件，实现液滴分配的闭环自动化。
 
-编辑 `backend/config/api.yaml` 文件配置API密钥：
+### 提示词模板系统
 
-```yaml
-apis:
-  qwen:
-    api_key: "your_qwen_api_key"
-  deepseek:
-    api_key: "your_deepseek_api_key"
+版本化管理（`config/prompts/v1/`），动态渲染，芯片布局自动注入上下文。
+
+### 悬浮预览面板
+
+可拖拽、可最小化、透明度可调的芯片网格预览面板，在对话过程中随时查看芯片状态。
+
+---
+
+## 技术栈
+
+### 后端
+
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+| Python | 3.8+ | 运行时 |
+| Flask | 2.0.1 | Web 框架 |
+| OpenAI SDK | ≥ 2.32.0 | AI 模型调用（DeepSeek 兼容） |
+| PyYAML | 6.0.1 | 配置管理 |
+| Flask-Cors | 3.0.10 | 跨域支持 |
+
+### 前端
+
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+| Vue | 3.4.21 | UI 框架 |
+| TypeScript | 5.4.2 | 类型系统 |
+| Vite | 5.1.6 | 构建工具 |
+| Pinia | 2.1.7 | 状态管理 |
+| Vue Router | 4.3.0 | 路由管理 |
+| Element Plus | 2.5.6 | UI 组件库 |
+| Axios | 1.6.7 | HTTP 客户端 |
+| Marked | 12.0.0 | Markdown 渲染 |
+| Mermaid | 11.13.0 | 流程图渲染 |
+| Highlight.js | 11.9.0 | 代码高亮 |
+
+---
+
+## 项目目录结构
+
+```
+微流控/
+├── backend/                    # 后端服务
+│   ├── app.py                 # Flask 应用入口
+│   ├── controllers/           # 控制器层（5个控制器）
+│   │   ├── api_controller.py
+│   │   ├── stream_controller.py
+│   │   ├── chip_layout_controller.py
+│   │   ├── prompt_controller.py
+│   │   └── health_controller.py
+│   ├── services/              # 服务层（7个服务）
+│   │   ├── api_service.py
+│   │   ├── api_client.py
+│   │   ├── chip_layout_service.py
+│   │   ├── config_service.py
+│   │   ├── prompt_service.py
+│   │   ├── droplet_tool_service.py
+│   │   └── tool_registry.py
+│   ├── utils/                 # 工具类
+│   ├── config/                # 配置文件
+│   │   ├── api.yaml          # API 配置
+│   │   ├── settings.yaml     # 系统设置
+│   │   └── prompts/v1/       # 提示词模板
+│   └── data/                  # 数据持久化
+├── frontend/                   # 前端应用
+│   ├── src/
+│   │   ├── api/              # API 客户端
+│   │   │   └── index.ts
+│   │   ├── components/       # 可复用组件
+│   │   │   ├── ChatInput.vue
+│   │   │   ├── MessageBubble.vue
+│   │   │   ├── ChipGridMini.vue
+│   │   │   ├── ChipPreviewPanel.vue
+│   │   │   └── message/      # 消息解析与渲染
+│   │   ├── views/            # 页面视图（3个）
+│   │   │   ├── ChatRoom.vue
+│   │   │   ├── ApiConfig.vue
+│   │   │   └── GridConfig.vue
+│   │   ├── stores/           # Pinia 状态管理（3个）
+│   │   │   ├── chat.ts
+│   │   │   ├── apiConfig.ts
+│   │   │   └── chipLayout.ts
+│   │   ├── types/            # TypeScript 类型定义
+│   │   └── router/           # 路由配置
+│   └── ...
+└── data/                       # 全局数据
+    └── chip_layout.json       # 芯片布局持久化
 ```
 
-### 前端配置
+---
 
-前端配置通过UI界面进行，会自动保存到localStorage。
+## 快速开始
 
-## 开发指南
+### 环境要求
 
-### 后端开发
+- Python 3.8+
+- Node.js 16+
+- npm 或 yarn
+
+### 后端启动
 
 ```bash
 cd backend
-# 安装依赖
 pip install -r requirements.txt
-# 启动开发服务器
 python app.py
+# 后端运行在 http://localhost:5000
 ```
 
-### 前端开发
+### 前端启动
 
 ```bash
 cd frontend
-# 安装依赖
 npm install
-# 启动开发服务器
 npm run dev
-# 构建生产版本
-npm run build
+# 前端运行在 http://localhost:3000
+# API 代理自动指向后端 localhost:5000
 ```
 
-## 常见问题
+### 配置 API 密钥
 
-### 后端启动失败
+1. 启动后访问 http://localhost:3000/config
+2. 选择 API 类型（千问 / DeepSeek）
+3. 填入 API 密钥并保存
 
-- 确保Python版本 >= 3.9
-- 确保已安装所有依赖：`pip install -r requirements.txt`
-- 检查端口5000是否被占用
+---
 
-### 前端启动失败
+## 使用指南
 
-- 确保Node.js版本 >= 18
-- 确保已安装所有依赖：`npm install`
-- 检查端口3000是否被占用
+**对话功能：** 首页即为对话页面，输入问题即可获得 AI 流式回复，DeepSeek 模型支持展开查看思维链。
 
-### API调用失败
+**网格配置：** 侧边栏点击「预览切换」显示悬浮面板，点击「编辑」进入网格配置页面，支持 17×22 网格逐格编辑。
 
-- 检查API密钥是否正确配置
-- 检查网络连接
-- 确认API服务可用
+**Mermaid 图表：** AI 回复中的 Mermaid 图表自动渲染，可点击全屏查看，右键可复制 / 下载为 PNG。
 
-### 对话没有实时输出
+---
 
-- 确认使用的是 `/api/api/stream` 接口
-- 检查浏览器是否支持SSE
-- 查看浏览器控制台错误信息
+## 路由页面
 
-## 许可证
+| 路径 | 页面 | 功能 |
+|------|------|------|
+| `/chat` | 对话室 | 主对话页面，支持多会话 |
+| `/config` | API 配置 | 配置 API 密钥、模型参数 |
+| `/grid-config` | 网格配置 | 编辑 17×22 芯片网格 |
 
-本项目为毕业论文项目，仅供学习和研究使用。
+---
+
+## 项目架构
+
+```
+用户浏览器 (Vue 3 SPA)
+    ↕ HTTP / SSE
+Vite Dev Server (端口 3000, 代理 /api → 5000)
+    ↕
+Flask 后端 (端口 5000)
+    ↕
+AI API (千问 / DeepSeek) + 串口硬件
+```
+
+---
+
+## 浏览器兼容性
+
+| 浏览器 | 最低版本 |
+|--------|----------|
+| Chrome | 88+ |
+| Firefox | 78+ |
+| Safari | 14+ |
+| Edge | 88+ |
