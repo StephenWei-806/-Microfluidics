@@ -27,27 +27,54 @@
           <div class="reasoning-content" v-html="renderedReasoningContent"></div>
         </div>
       </div>
-      <!-- 工具执行状态 -->
-      <div v-if="message.toolStatus" class="tool-status">
-        <span class="tool-status-icon">🔧</span>
-        <span class="tool-status-label">调用工具中...</span>
-        <span class="tool-status-detail">{{ message.toolStatus }}</span>
-      </div>
-      <!-- 工具执行结果（折叠面板样式） -->
-      <div v-if="message.toolResults?.length" class="tool-results">
-        <div v-for="(tr, idx) in message.toolResults" :key="idx" class="tool-result-item">
-          <div class="tool-result-header" @click="toggleToolResult(idx)">
-            <span class="tool-result-icon">✅</span>
-            <span class="tool-result-name">{{ tr.toolName }}</span>
-            <span class="tool-result-label">执行完成</span>
-            <el-icon class="tool-result-arrow" :class="{ expanded: expandedToolResults.has(idx) }">
-              <ArrowRight />
-            </el-icon>
+      <!-- 工具调用状态（执行中 → 完成，原地平滑切换） -->
+      <div v-if="toolCallList.length" class="tool-calls">
+        <TransitionGroup name="tool-call-list" tag="div">
+          <div
+            v-for="(tc, idx) in toolCallList"
+            :key="`${tc.toolName}-${tc.timestamp}`"
+            class="tool-call-item"
+            :class="`tool-call-item--${tc.status}`"
+          >
+            <div
+              class="tool-call-header"
+              :class="{ clickable: tc.status === 'completed' }"
+              @click="tc.status === 'completed' && toggleToolCall(idx)"
+            >
+              <Transition name="tool-call-icon-fade" mode="out-in">
+                <span v-if="tc.status === 'executing'" key="exec-icon" class="tool-call-icon">🔧</span>
+                <span v-else key="done-icon" class="tool-call-icon">✅</span>
+              </Transition>
+              <span class="tool-call-name">{{ tc.toolName }}</span>
+              <Transition name="tool-call-label-fade" mode="out-in">
+                <span
+                  v-if="tc.status === 'executing'"
+                  key="exec-label"
+                  class="tool-call-label tool-call-label--executing"
+                >调用工具中...</span>
+                <span
+                  v-else
+                  key="done-label"
+                  class="tool-call-label tool-call-label--done"
+                >工具执行完成</span>
+              </Transition>
+              <el-icon
+                v-if="tc.status === 'completed'"
+                class="tool-call-arrow"
+                :class="{ expanded: expandedToolCalls.has(idx) }"
+              >
+                <ArrowRight />
+              </el-icon>
+            </div>
+            <div
+              v-if="tc.status === 'completed'"
+              v-show="expandedToolCalls.has(idx)"
+              class="tool-call-body"
+            >
+              <pre class="tool-call-result">{{ formatToolResult(tc.result || '') }}</pre>
+            </div>
           </div>
-          <div v-show="expandedToolResults.has(idx)" class="tool-result-body">
-            <pre class="tool-result-content">{{ formatToolResult(tr.result) }}</pre>
-          </div>
-        </div>
+        </TransitionGroup>
       </div>
       <!-- 流式传输中：分段渲染，支持实时显示已完成的 mermaid 块 -->
       <div v-if="message.isStreaming" class="content-text streaming-mode">
@@ -130,7 +157,7 @@ import { watch, nextTick, ref, onUnmounted, onMounted, computed } from 'vue'
 import { ChatDotRound, DocumentCopy, Close, Download, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
-import type { Message } from '@/types'
+import type { Message, ToolCall } from '@/types'
 import 'highlight.js/styles/github.css'
 
 import { parseContent, escapeHtml, hashContent } from './message/ContentParser'
@@ -150,16 +177,32 @@ const props = defineProps<Props>()
 // 折叠面板状态
 const reasoningExpanded = ref(false)
 
-// 工具结果折叠状态
-const expandedToolResults = ref(new Set<number>())
-
-function toggleToolResult(idx: number) {
-  if (expandedToolResults.value.has(idx)) {
-    expandedToolResults.value.delete(idx)
-  } else {
-    expandedToolResults.value.add(idx)
+// 工具调用列表：优先使用新字段 toolCalls，兼容历史 localStorage 中的 toolResults
+const toolCallList = computed<ToolCall[]>(() => {
+  const msg = props.message
+  if (msg.toolCalls && msg.toolCalls.length) return msg.toolCalls
+  // 回放兼容：旧 localStorage 中的 toolResults 视为已完成
+  if (msg.toolResults && msg.toolResults.length) {
+    return msg.toolResults.map(tr => ({
+      toolName: tr.toolName,
+      status: 'completed' as const,
+      result: tr.result,
+      timestamp: tr.timestamp
+    }))
   }
-  expandedToolResults.value = new Set(expandedToolResults.value) // 触发响应性
+  return []
+})
+
+// 工具调用结果折叠状态
+const expandedToolCalls = ref(new Set<number>())
+
+function toggleToolCall(idx: number) {
+  if (expandedToolCalls.value.has(idx)) {
+    expandedToolCalls.value.delete(idx)
+  } else {
+    expandedToolCalls.value.add(idx)
+  }
+  expandedToolCalls.value = new Set(expandedToolCalls.value) // 触发响应性
 }
 
 function formatToolResult(result: string): string {
@@ -524,49 +567,77 @@ onUnmounted(() => {
   51%, 100% { opacity: 0; }
 }
 
-// 工具执行结果折叠面板样式
-.tool-results {
+// 工具调用统一状态样式
+.tool-calls {
   margin-bottom: 12px;
 }
 
-.tool-result-item {
-  border: 1px solid #c8e6c9;
+.tool-call-item {
   border-radius: 8px;
-  background: #f1f8e9;
   overflow: hidden;
   margin-bottom: 8px;
-}
+  transition: background 0.35s ease, border-color 0.35s ease;
 
-.tool-result-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: background 0.2s;
+  &--executing {
+    background: #f0f7ff;
+    border: 1px solid #b3d8ff;
+    border-left: 3px solid #409eff;
+  }
 
-  &:hover {
-    background: #e8f5e9;
+  &--completed {
+    background: #f1f8e9;
+    border: 1px solid #c8e6c9;
+    border-left: 3px solid #67c23a;
   }
 }
 
-.tool-result-icon {
-  font-size: 14px;
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  transition: background 0.2s;
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.03);
+    }
+  }
 }
 
-.tool-result-name {
+.tool-call-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tool-call-name {
   font-size: 13px;
   font-weight: 600;
-  color: #2e7d32;
+  color: #333;
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
-.tool-result-label {
+.tool-call-label {
   font-size: 12px;
-  color: #66bb6a;
+  display: inline-flex;
+  align-items: center;
+
+  &--executing {
+    color: #409eff;
+    font-weight: 500;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  &--done {
+    color: #67c23a;
+    font-weight: 500;
+  }
 }
 
-.tool-result-arrow {
+.tool-call-arrow {
   margin-left: auto;
   transition: transform 0.2s ease;
   color: #81c784;
@@ -576,12 +647,12 @@ onUnmounted(() => {
   }
 }
 
-.tool-result-body {
+.tool-call-body {
   padding: 0 14px 12px;
   border-top: 1px solid #c8e6c9;
 }
 
-.tool-result-content {
+.tool-call-result {
   max-height: 300px;
   overflow-y: auto;
   font-size: 12px;
@@ -595,35 +666,43 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-// 工具执行状态样式
-.tool-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: #f0f7ff;
-  border-left: 3px solid #409eff;
-  border-radius: 0 8px 8px 0;
-  margin-bottom: 10px;
+// 工具调用状态切换动画
+.tool-call-icon-fade-enter-active,
+.tool-call-icon-fade-leave-active,
+.tool-call-label-fade-enter-active,
+.tool-call-label-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
-.tool-status-icon {
-  font-size: 16px;
-  line-height: 1;
-  flex-shrink: 0;
+.tool-call-icon-fade-enter-from,
+.tool-call-label-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-2px);
 }
 
-.tool-status-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #409eff;
-  animation: pulse 1.5s ease-in-out infinite;
+.tool-call-icon-fade-leave-to,
+.tool-call-label-fade-leave-to {
+  opacity: 0;
+  transform: translateY(2px);
 }
 
-.tool-status-detail {
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.4;
+// 工具调用列表进出动画
+.tool-call-list-enter-active {
+  transition: all 0.3s ease;
+}
+
+.tool-call-list-leave-active {
+  transition: all 0.2s ease;
+}
+
+.tool-call-list-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.tool-call-list-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 // 思维链折叠面板样式

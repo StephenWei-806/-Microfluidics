@@ -143,32 +143,64 @@ export const useChatStore = defineStore('chat', () => {
       const callbacks: EventSourceCallbacks = {
         onMessage: (chunk) => {
           // 处理工具状态事件
+          // 后端有两种 tool_status 消息：
+          //   a) “正在执行: {tool_name}...”  → 起始信号，追加一条 executing 记录
+          //   b) “工具 {tool_name} 执行完成”   → 志愿性完成信号，已由 tool_result 驱动，此处忽略
           if (chunk.type === 'tool_status') {
             const currentMessage = conversation.messages[assistantMessageIndex]
             if (currentMessage) {
-              conversation.messages[assistantMessageIndex] = {
-                ...currentMessage,
-                toolStatus: chunk.message
+              const msg: string = chunk.message || ''
+              const startMatch = msg.match(/正在执行[:：]\s*([A-Za-z_][A-Za-z0-9_]*)/)
+              if (startMatch) {
+                const toolName = startMatch[1]
+                const toolCalls = [...(currentMessage.toolCalls || [])]
+                toolCalls.push({
+                  toolName,
+                  status: 'executing',
+                  timestamp: Date.now()
+                })
+                conversation.messages[assistantMessageIndex] = {
+                  ...currentMessage,
+                  toolCalls
+                }
+                conversation.updatedAt = Date.now()
               }
-              conversation.updatedAt = Date.now()
+              // “工具 X 执行完成” 消息不再做 UI 改变（避免与 tool_result 重复更新）
             }
             return
           }
 
-          // 处理工具执行结果事件
+          // 处理工具执行结果事件：权威完成信号
+          // 将对应 toolName 的最后一条 executing 记录升级为 completed，并写入 result
           if (chunk.type === 'tool_result') {
             const currentMessage = conversation.messages[assistantMessageIndex]
             if (currentMessage) {
-              const toolResults = [...(currentMessage.toolResults || [])]
-              toolResults.push({
-                toolName: chunk.tool_name,
-                result: chunk.result,
-                timestamp: Date.now()
-              })
+              const toolCalls = [...(currentMessage.toolCalls || [])]
+              let matchedIdx = -1
+              for (let i = toolCalls.length - 1; i >= 0; i--) {
+                if (toolCalls[i].toolName === chunk.tool_name && toolCalls[i].status === 'executing') {
+                  matchedIdx = i
+                  break
+                }
+              }
+              if (matchedIdx >= 0) {
+                toolCalls[matchedIdx] = {
+                  ...toolCalls[matchedIdx],
+                  status: 'completed',
+                  result: chunk.result
+                }
+              } else {
+                // 防御：理论上不会走到（缺失起始事件），直接以 completed 追加
+                toolCalls.push({
+                  toolName: chunk.tool_name,
+                  status: 'completed',
+                  result: chunk.result,
+                  timestamp: Date.now()
+                })
+              }
               conversation.messages[assistantMessageIndex] = {
                 ...currentMessage,
-                toolResults,
-                toolStatus: `${chunk.tool_name} 执行完成`
+                toolCalls
               }
               conversation.updatedAt = Date.now()
             }
@@ -197,8 +229,7 @@ export const useChatStore = defineStore('chat', () => {
             if (currentMessage) {
               conversation.messages[assistantMessageIndex] = {
                 ...currentMessage,
-                content: currentMessage.content + deltaContent,
-                toolStatus: undefined  // 清除工具状态
+                content: currentMessage.content + deltaContent
               }
             }
             // 触发Vue响应性更新 - 通过更新时间戳
