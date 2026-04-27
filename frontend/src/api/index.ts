@@ -130,18 +130,12 @@ export function createEventSource(
   callbacks: EventSourceCallbacks
 ): EventSource {
   const url = `${baseURL}/stream/${streamId}`
-  console.log('[SSE] EventSource connecting to:', url)
   const eventSource = new EventSource(url)
 
   eventSource.onmessage = (event) => {
     const rawData = event.data
-    console.log('[SSE] Message received:', {
-      length: rawData.length,
-      preview: rawData.substring(0, 80)
-    })
 
     if (rawData === '[DONE]') {
-      console.log('[SSE] Received [DONE] signal, closing connection')
       eventSource.close()
       callbacks.onComplete()
       return
@@ -151,19 +145,14 @@ export function createEventSource(
       const chunk = JSON.parse(rawData)
       callbacks.onMessage(chunk)
     } catch (err) {
-      console.error('[SSE] JSON parse error:', {
-        error: err instanceof Error ? err.message : String(err),
-        rawData: rawData.substring(0, 200)
-      })
+      console.error('[SSE] JSON parse error:', err instanceof Error ? err.message : String(err))
     }
   }
 
-  eventSource.onerror = (err) => {
-    const state = eventSource.readyState
-    const stateStr = state === 0 ? 'CONNECTING' : state === 1 ? 'OPEN' : 'CLOSED'
-    console.error(`[SSE] Connection error (state: ${stateStr}):`, err)
+  eventSource.onerror = () => {
+    console.error('[SSE] Connection error')
     eventSource.close()
-    callbacks.onError('SSE 连接发生错误，请查看控制台日志了解详情')
+    callbacks.onError('SSE 连接发生错误')
   }
 
   return eventSource

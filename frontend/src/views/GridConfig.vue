@@ -96,7 +96,7 @@ function getCellStyle(value: number, rowIndex?: number, colIndex?: number) {
     }
   }
   return {
-    backgroundColor: value !== 0 ? '#4CAF50' : '#e0e0e0',
+    backgroundColor: value !== 0 ? '#67c23a' : '#e0e0e0',
     color: value !== 0 ? '#fff' : '#333'
   }
 }
@@ -110,18 +110,21 @@ function clampValue(row: number, col: number) {
   errorCells.value.delete(`${row}-${col}`)
 }
 
+function applyGridData(loadedGrid: number[][]) {
+  for (let i = 0; i < ROWS; i++) {
+    for (let j = 0; j < COLS; j++) {
+      if (loadedGrid[i]?.[j] !== undefined) {
+        grid[i][j] = loadedGrid[i][j]
+      }
+    }
+  }
+}
+
 async function loadCurrentConfig() {
   try {
     const response = await apiClient.getChipLayout()
     if (response.data && response.data.grid) {
-      const loadedGrid = response.data.grid
-      for (let i = 0; i < ROWS; i++) {
-        for (let j = 0; j < COLS; j++) {
-          if (loadedGrid[i] && loadedGrid[i][j] !== undefined) {
-            grid[i][j] = loadedGrid[i][j]
-          }
-        }
-      }
+      applyGridData(response.data.grid)
       ElMessage.success('配置加载成功！')
     } else {
       ElMessage.warning('返回数据格式不正确')
@@ -146,14 +149,7 @@ async function resetToDefault() {
   try {
     const response = await apiClient.resetChipLayout()
     if (response.data && response.data.grid) {
-      const loadedGrid = response.data.grid
-      for (let i = 0; i < ROWS; i++) {
-        for (let j = 0; j < COLS; j++) {
-          if (loadedGrid[i] && loadedGrid[i][j] !== undefined) {
-            grid[i][j] = loadedGrid[i][j]
-          }
-        }
-      }
+      applyGridData(response.data.grid)
     }
     errorCells.value.clear()
     ElMessage.success('已重置为默认配置！')

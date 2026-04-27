@@ -135,7 +135,6 @@ class DropletToolService:
 
                     frame = build_frame(nodes, voltage=voltage, output_type=output_type)
                     msg = f"t={t:02d} Sent: {frame.hex(' ').upper()}"
-                    print(msg)
                     logger.info(msg)
                     log_messages.append(msg)
                     executed_steps += 1
@@ -165,7 +164,6 @@ class DropletToolService:
                         ser.flush()
 
                         msg = f"t={t:02d} Sent: {frame.hex(' ').upper()}"
-                        print(msg)
                         logger.info(msg)
                         log_messages.append(msg)
                         executed_steps += 1

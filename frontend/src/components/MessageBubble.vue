@@ -304,6 +304,19 @@ documentClickCleanup = () => {
   document.removeEventListener('click', handleDocumentClick)
 }
 
+// 构建已渲染 Mermaid 段落的缓存 Map（按 content hash 索引）
+function buildRenderedMap(...segmentArrays: ContentSegment[][]): Map<string, ContentSegment> {
+  const map = new Map<string, ContentSegment>()
+  for (const segments of segmentArrays) {
+    for (const seg of segments) {
+      if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
+        map.set(hashContent(seg.content), seg)
+      }
+    }
+  }
+  return map
+}
+
 // 更新流式传输中的内容
 async function updateStreamingContent() {
   // 互斥锁检查：如果已有更新在执行，标记待处理并返回
@@ -317,12 +330,7 @@ async function updateStreamingContent() {
     const { segments, hasUnclosedMermaid, trailingText } = parseContent(props.message.content)
 
     // 保留已处理的 mermaid 段落的渲染结果（包括成功渲染和降级显示的）
-    const existingRendered = new Map<string, ContentSegment>()
-    streamSegments.value.forEach(seg => {
-      if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
-        existingRendered.set(hashContent(seg.content), seg)
-      }
-    })
+    const existingRendered = buildRenderedMap(streamSegments.value)
 
     // 合并新的段落和已渲染的结果
     streamSegments.value = segments.map(seg => {
@@ -359,19 +367,8 @@ async function updateFinalContent() {
   const { segments } = parseContent(props.message.content)
   
   // 保留已渲染的 mermaid 段落的渲染结果（同时从流式段落和最终段落中继承）
-  const existingRendered = new Map<string, ContentSegment>()
-  // 优先从流式阶段的段落中继承渲染结果（流式→最终的过渡场景）
-  streamSegments.value.forEach(seg => {
-    if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
-      existingRendered.set(hashContent(seg.content), seg)
-    }
-  })
-  // 再从已有的最终段落中查找（页面刷新后重新渲染的场景）
-  finalSegments.value.forEach(seg => {
-    if (seg.type === 'mermaid' && (seg.rendered || seg.renderError)) {
-      existingRendered.set(hashContent(seg.content), seg)
-    }
-  })
+  // 优先从流式阶段继承（流式→最终的过渡），再从已有最终段落查找（页面刷新重渲染）
+  const existingRendered = buildRenderedMap(streamSegments.value, finalSegments.value)
   
   // 合并新的段落和已渲染的结果
   finalSegments.value = segments.map(seg => {
@@ -514,21 +511,18 @@ onUnmounted(() => {
   }
 }
 
-.content-text {
-  line-height: 1.6;
-  word-wrap: break-word;
-
+@mixin code-block-styles($code-bg, $code-padding, $code-radius, $code-font-size, $pre-bg, $pre-padding, $pre-radius) {
   :deep(code) {
-    background: #f5f5f5;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.9em;
+    background: $code-bg;
+    padding: $code-padding;
+    border-radius: $code-radius;
+    font-size: $code-font-size;
   }
 
   :deep(pre) {
-    background: #f8f8f8;
-    padding: 12px;
-    border-radius: 8px;
+    background: $pre-bg;
+    padding: $pre-padding;
+    border-radius: $pre-radius;
     overflow-x: auto;
 
     code {
@@ -536,6 +530,13 @@ onUnmounted(() => {
       padding: 0;
     }
   }
+}
+
+.content-text {
+  line-height: 1.6;
+  word-wrap: break-word;
+
+  @include code-block-styles(#f5f5f5, 2px 6px, 4px, 0.9em, #f8f8f8, 12px, 8px);
 
   .user-message & {
     :deep(code), :deep(pre) {
@@ -811,24 +812,7 @@ onUnmounted(() => {
     margin: 0 0 8px;
   }
 
-  :deep(code) {
-    background: #eef;
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-size: 0.85em;
-  }
-
-  :deep(pre) {
-    background: #f0f0f8;
-    padding: 10px;
-    border-radius: 6px;
-    overflow-x: auto;
-
-    code {
-      background: none;
-      padding: 0;
-    }
-  }
+  @include code-block-styles(#eef, 2px 5px, 3px, 0.85em, #f0f0f8, 10px, 6px);
 
   :deep(ul), :deep(ol) {
     padding-left: 20px;

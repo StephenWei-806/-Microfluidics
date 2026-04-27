@@ -152,7 +152,6 @@ function extractModels(result: any): string[] {
   if (Array.isArray(result)) {
     return result
   }
-  console.warn('[loadModels] 无法从响应中提取 models，原始响应:', result)
   return []
 }
 
@@ -160,8 +159,7 @@ async function loadModels() {
   try {
     const result = await apiClient.getModels(form.currentApi)
     availableModels.value = extractModels(result)
-  } catch (error) {
-    console.error('加载模型列表失败:', error)
+  } catch {
     availableModels.value = []
   }
 }
