@@ -21,6 +21,33 @@ mermaid.initialize({
 export function sanitizeMermaidCode(code: string): string {
   let sanitized = code
 
+  // === 预处理：清理AI生成的异常语法 ===
+
+  // Pattern: (("[#quot;text#quot;]")) 或 (("(#quot;text#quot;")) → (("text"))
+  sanitized = sanitized.replace(
+    /\(\(\s*"?[\[\(]?#quot;([^#]*?)#quot;[\]\)]?"?\s*\)\)/g,
+    '(("$1"))'
+  )
+
+  // 移除不完整的style声明（如截断的 'styl'）
+  sanitized = sanitized.replace(/^\s*styl\b(?!e\b).*$/gm, '')
+
+  // 去重重复的 style 声明
+  const seenStyles = new Set<string>()
+  sanitized = sanitized.split('\n').filter(line => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('style ')) {
+      if (seenStyles.has(trimmed)) return false
+      seenStyles.add(trimmed)
+    }
+    return true
+  }).join('\n')
+
+  // 压缩连续空行
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n')
+
+  // === 以下为原有的节点标签引号兼容处理 ===
+
   // 处理 ((...)) 双圆括号（圆形节点）
   sanitized = sanitized.replace(
     /([a-zA-Z_]\w*)\(\(([^)]*)\)\)/g,

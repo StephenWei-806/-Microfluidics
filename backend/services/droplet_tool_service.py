@@ -1,4 +1,4 @@
-"""液滴分配工具服务 —— 从 automated_dispense_droplet.py 提取核心协议逻辑并封装为可复用服务。"""
+"""液滴分配工具服务"""
 
 import time
 import logging
