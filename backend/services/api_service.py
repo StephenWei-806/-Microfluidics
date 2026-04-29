@@ -6,6 +6,7 @@ from services.config_service import ConfigService
 from services.chip_layout_service import ChipLayoutService
 from services.api_client import ApiClientFactory, BaseApiClient, ChatCompletionRequest, ChatCompletionResponse
 from utils.common_utils import build_messages, extract_content, check_rate_limit, validate_api_config
+from utils.stream_logger import StreamResponseAccumulator
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +296,15 @@ class ApiService:
         
         for iteration in range(max_iterations):
             logger.info(f"[AgentLoop] 迭代 {iteration + 1}/{max_iterations}")
-            
+
+            # 每轮迭代创建一个累积器，单独记录本轮完整响应（便于多轮调试）
+            iter_accumulator = StreamResponseAccumulator(
+                api_name=api_name,
+                model=model,
+                prompt=prompt,
+                tools_enabled=True,
+            )
+
             # 3. 流式调用（带工具定义），实时输出 + 同时累积 tool_calls
             request_obj = ChatCompletionRequest(
                 model=model or api_config.get('default_model', ''),
@@ -308,38 +317,51 @@ class ApiService:
                 tools=tools,
                 tool_choice='auto'
             )
-            
+
             # 速率限制检查
             self._check_rate_limit(api_name)
-            
+
             accumulated_content = ""
             accumulated_reasoning = ""
             accumulated_tool_calls = {}
-            
+
             # 流式调用，实时推送文本/思维链内容到前端，同时累积 tool_calls
             for chunk in client.stream_chat_completions(request_obj):
+                # 本轮累积器记录所有原始 chunk（非阻塞，仅内存拼接）
+                iter_accumulator.accumulate(chunk)
+
                 choices = chunk.get('choices', [])
                 if not choices:
                     continue
-                
+
                 delta = choices[0].get('delta', {})
-                
+
                 # 实时推送文本/思维链内容到前端
                 has_content = delta.get('content')
                 has_reasoning = delta.get('reasoning_content')
                 if has_content or has_reasoning:
                     yield chunk  # 直接推送到前端
-                
+
                 # 累积文本内容
                 if has_content:
                     accumulated_content += has_content
                 if has_reasoning:
                     accumulated_reasoning += has_reasoning
-                
+
                 # 累积 tool_calls 增量
                 tool_calls_delta = delta.get('tool_calls')
                 if tool_calls_delta:
                     _accumulate_tool_calls(accumulated_tool_calls, tool_calls_delta)
+
+            # 本轮流式读取完毕，写入本轮完整响应日志（后台队列，不阻塞后续流程）
+            try:
+                iter_accumulator.finalize(extra={
+                    'source': 'agentic_stream_api',
+                    'iteration': iteration + 1,
+                    'max_iterations': max_iterations,
+                })
+            except Exception as log_err:
+                logger.warning(f"[AgentLoop] 写入迭代完整响应日志失败: {log_err}")
             
             # 4. 流结束后判断是否有工具调用
             if accumulated_tool_calls:

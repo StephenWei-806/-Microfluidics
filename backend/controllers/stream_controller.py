@@ -3,6 +3,7 @@ from .base import error_handler, SSE_HEADERS
 from . import api_service
 from . import config_service
 from . import tool_registry
+from utils.stream_logger import StreamResponseAccumulator
 import uuid
 import time
 import json
@@ -46,31 +47,47 @@ def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
     """
     logger.info(f'[SSE] 开始发送SSE流: api_name={api_name}, model={model}, tools_enabled={tools_enabled}')
     chunk_count = 0
+
+    # 创建累积器：在流结束后将完整响应写入专用流式日志（非阻塞）
+    accumulator = StreamResponseAccumulator(
+        api_name=api_name,
+        model=model,
+        prompt=prompt,
+        tools_enabled=tools_enabled,
+    )
+    finalize_extra = {'source': 'stream_api_response'}
+
     try:
         if tools_enabled:
             # 千问 API 降级：千问不支持 function calling，自动回退到普通流式对话
             api_config = api_service.get_api_config(api_name)
             api_type = api_config.get('api_type', 'openai') if api_config else 'openai'
-            
+
             if api_type == 'qwen':
                 logger.info(f'[SSE] 千问 API 不支持工具调用，降级为普通流式对话: api_name={api_name}')
+                finalize_extra['mode'] = 'qwen_fallback'
                 for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
+                    accumulator.accumulate(chunk)
                     chunk_str = json.dumps(chunk)
                     chunk_count += 1
                     yield f'data: {chunk_str}\n\n'
             else:
                 # OpenAI 兼容 API（DeepSeek 等）：使用流式优先 Agent Loop
+                finalize_extra['mode'] = 'agentic_stream'
                 for chunk in api_service.agentic_stream_api(
                     api_name, model, prompt,
                     tool_registry=tool_registry,
                     **kwargs
                 ):
+                    accumulator.accumulate(chunk)
                     chunk_str = json.dumps(chunk)
                     chunk_count += 1
                     yield f'data: {chunk_str}\n\n'
         else:
             # 现有逻辑：普通流式调用
+            finalize_extra['mode'] = 'plain_stream'
             for chunk in api_service.stream_api(api_name, model, prompt, **kwargs):
+                accumulator.accumulate(chunk)
                 chunk_str = json.dumps(chunk)
                 chunk_count += 1
                 yield f'data: {chunk_str}\n\n'
@@ -78,16 +95,28 @@ def stream_api_response(api_name, model, prompt, tools_enabled=False, **kwargs):
         yield 'data: [DONE]\n\n'
     except req_lib.exceptions.ReadTimeout as e:
         logger.error(f'[SSE] 流式传输读取超时: {str(e)}', exc_info=True)
-        yield f'data: {json.dumps({"error": "API响应超时，请稍后重试或缩短提问内容"})}\n\n'
+        err_chunk = {'error': 'API响应超时，请稍后重试或缩短提问内容'}
+        accumulator.accumulate(err_chunk)
+        yield f'data: {json.dumps(err_chunk)}\n\n'
         yield 'data: [DONE]\n\n'
     except req_lib.exceptions.ConnectionError as e:
         logger.error(f'[SSE] 流式传输连接错误: {str(e)}', exc_info=True)
-        yield f'data: {json.dumps({"error": "无法连接到API服务，请检查网络连接"})}\n\n'
+        err_chunk = {'error': '无法连接到API服务，请检查网络连接'}
+        accumulator.accumulate(err_chunk)
+        yield f'data: {json.dumps(err_chunk)}\n\n'
         yield 'data: [DONE]\n\n'
     except Exception as e:
         logger.error(f'[SSE] 流式传输异常: {str(e)}', exc_info=True)
-        yield f'data: {json.dumps({"error": str(e)})}\n\n'
+        err_chunk = {'error': str(e)}
+        accumulator.accumulate(err_chunk)
+        yield f'data: {json.dumps(err_chunk)}\n\n'
         yield 'data: [DONE]\n\n'
+    finally:
+        # 无论流是否正常结束，都写入完整响应日志（走后台队列，不阻塞连接关闭）
+        try:
+            accumulator.finalize(extra=finalize_extra)
+        except Exception as log_err:
+            logger.warning(f'[SSE] 写入流式完整响应日志失败: {log_err}')
 
 
 @stream_bp.route('/stream/init', methods=['POST'])
